@@ -1,0 +1,5 @@
+{
+  "buildCommand": "cd ../.. && npm run build:editor",
+  "outputDirectory": "dist",
+  "installCommand": "cd ../.. && npm install"
+}
