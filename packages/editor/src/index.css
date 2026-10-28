@@ -81,9 +81,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid #78dfff; outline-
 .stage-panel { grid-column: 3; grid-row: 1; min-height: 0; min-width: 0; padding: 28px 0 0 29px; position: relative; overflow: hidden; }
 .ruler { position: absolute; z-index: 2; pointer-events: none; opacity: .82; }
 .ruler-top { top: 0; left: 29px; right: 0; height: 28px; background: linear-gradient(180deg,#1e2b43,#172138); border-bottom: 1px solid #5d6d8e; }
-.ruler-top div { height: 100%; background: repeating-linear-gradient(90deg, transparent 0 7px, rgba(185,198,221,.65) 7px 8px, transparent 8px 19px, rgba(185,198,221,.78) 19px 20px, transparent 20px 39px, rgba(185,198,221,.35) 39px 40px); }
+.ruler-top div { height: 100%; background: linear-gradient(90deg,#6c7cb8 1px,transparent 1px) 0 100%/5px 4px repeat-x,linear-gradient(90deg,#97a6d8 1px,transparent 1px) 0 100%/20px 8px repeat-x; }
 .ruler-left { top: 28px; left: 0; bottom: 0; width: 29px; background: linear-gradient(90deg,#1e2b43,#172138); border-right: 1px solid #63718c; }
-.ruler-left div { width: 100%; height: 100%; background: repeating-linear-gradient(180deg, transparent 0 7px, rgba(185,198,221,.62) 7px 8px, transparent 8px 19px, rgba(185,198,221,.72) 19px 20px, transparent 20px 39px, rgba(185,198,221,.34) 39px 40px); }
+.ruler-left div { width: 100%; height: 100%; background: linear-gradient(0deg,#6c7cb8 1px,transparent 1px) 100% 0/4px 5px repeat-y,linear-gradient(0deg,#97a6d8 1px,transparent 1px) 100% 0/8px 20px repeat-y; }
 .stage-grid { position: absolute; left: 29px; right: 0; top: 28px; bottom: 0; overflow: hidden; background-color: #172138; background-image: linear-gradient(rgba(2, 9, 24, .93) 1.7px, transparent 1.7px), linear-gradient(90deg, rgba(2, 9, 24, .93) 1.7px, transparent 1.7px); background-size: 26px 26px; background-position: -1px -1px; touch-action: none; }
 .stage-grid.no-snap { background-image: linear-gradient(rgba(2,9,24,.8) 1px, transparent 1px), linear-gradient(90deg, rgba(2,9,24,.8) 1px, transparent 1px); background-size: 26px 26px; }
 .stage-grid.placing { cursor: crosshair; }
