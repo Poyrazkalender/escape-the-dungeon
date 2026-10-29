@@ -124,7 +124,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid #78dfff; outline-
 .inspector-heading { height: 42px; display: flex; align-items: center; font-size: 25px; line-height: 1; letter-spacing: .2px; font-weight: 700; border-bottom: 1px solid rgba(111,137,181,.2); flex: 0 0 auto; }
 .inspector-scroll { overflow-y: auto; min-height: 0; flex: 1; padding-right: 2px; margin-right: -7px; scrollbar-width: thin; scrollbar-color: #526487 transparent; }
 .inspector-section { padding: 13px 0 14px; border-bottom: 1px solid rgba(110,136,182,.22); }
-.inspector-section h3, .upload-section h3 { font-size: 19px; margin: 1 0 10px; line-height: 1.25; font-weight: 700; color: #f0f0f6; }
+.inspector-section h3, .upload-section h3 { font-size: 19px; margin: 10 0 10px; line-height: 1.25; font-weight: 700; color: #f0f0f6; }
 .xy-row { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-bottom: 8px; }
 .xy-row label { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 8px; font-size: 19px; }
 .xy-row input { width: 100%; min-width: 0; height: 38px; color: #f5f6ff; border: 1px solid #617bac; border-radius: 11px; padding: 0 12px; background: linear-gradient(180deg,#2d3a56,#263149); box-shadow: inset 0 2px 3px rgba(0,0,0,.22), 0 1px 0 rgba(255,255,255,.03); font-size: 19px; }
