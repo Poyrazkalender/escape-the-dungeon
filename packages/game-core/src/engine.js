@@ -25,6 +25,7 @@ export function createState(levelData, characters = { p1: 'platformBlue', p2: 'p
       // ✅ YENİ: Kutu için fizik değişkenleri
       vx: 0, vy: 0, grounded: false, boxGrounded: false ,
 	  leverTilt: 0, // ✅ YENİ: Kol eğim açısı (-1 ile +1 arası)
+	  leverState: p.leverState !== undefined ? p.leverState : 0, // ✅ YENİ
     })),
     blueSpawn: { ...levelData.blueSpawn },
     pinkSpawn: { ...levelData.pinkSpawn },

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import MobileTestControls from './components/MobileTestControls';
 import {
   Activity, ArrowLeftRight, Brush, ChevronDown, ChevronUp, Copy, Eraser,
   File, ImagePlus, MousePointer2, Move, Paintbrush, Pencil, Play,
@@ -39,6 +40,17 @@ const LIBRARY = [
   ]},
 ];
 
+const getResizeHandles = (p) => [
+  { id: 'nw', x: p.x, y: p.y },
+  { id: 'n', x: p.x + p.w / 2, y: p.y },
+  { id: 'ne', x: p.x + p.w, y: p.y },
+  { id: 'w', x: p.x, y: p.y + p.h / 2 },
+  { id: 'e', x: p.x + p.w, y: p.y + p.h / 2 },
+  { id: 'sw', x: p.x, y: p.y + p.h },
+  { id: 's', x: p.x + p.w / 2, y: p.y + p.h },
+  { id: 'se', x: p.x + p.w, y: p.y + p.h },
+];
+
 const SWATCHES = ['#171f36', '#414554', '#b42d68', '#873fa6', '#4059c8', '#209ee7', '#1d8196', '#2da56e', '#75bd4e', '#ffc536', '#f18b0a', '#aa6046', '#818994', '#fbfbfb'];
 const DEFAULT_LEVEL = {
   platforms: [
@@ -68,6 +80,8 @@ export default function App() {
 	  { id: 'yellow', color: '#eab308', label: '🟡 Sarı' },
 	  { id: 'purple', color: '#a855f7', label: '🟣 Mor' },
 ];
+
+  const [resizeTarget, setResizeTarget] = useState(null); // ✅ YENİ: Boyutlandırma
 	
   const [levels, setLevels] = useState(() => {
     const saved = localStorage.getItem('love-game-levels');
@@ -130,6 +144,64 @@ export default function App() {
   }, [levelData, currentLevelIndex]);
 
   useEffect(() => { if (!isDragging) levelRef.current = levelData; }, [levelData, isDragging]);
+  
+    // ✅ YENİ: İki parmakla yakınlaştırma/uzaklaştırma (Pinch Zoom)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    let initialDist = 0;
+    let initialZoom = 1;
+    let initialPan = { x: 0, y: 0 };
+    let initialCenter = { x: 0, y: 0 };
+
+    const onTouchStart = (e) => {
+      if (e.touches.length === 2) {
+        isPinchingRef.current = true;
+        const [t1, t2] = e.touches;
+        initialDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        initialZoom = zoomRef.current;
+        initialPan = { ...panRef.current };
+        initialCenter = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+        e.preventDefault();
+      }
+    };
+
+    const onTouchMove = (e) => {
+      if (isPinchingRef.current && e.touches.length === 2) {
+        e.preventDefault();
+        const [t1, t2] = e.touches;
+        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        const center = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+        
+        const zoomFactor = dist / initialDist;
+        const newZoom = Math.min(Math.max(0.2, initialZoom * zoomFactor), 3);
+        setZoom(newZoom);
+        
+        const panDeltaX = center.x - initialCenter.x;
+        const panDeltaY = center.y - initialCenter.y;
+        setPan({ x: initialPan.x + panDeltaX, y: initialPan.y + panDeltaY });
+      }
+    };
+
+    const onTouchEnd = (e) => {
+      if (e.touches.length < 2) {
+        isPinchingRef.current = false;
+      }
+    };
+
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd);
+    canvas.addEventListener('touchcancel', onTouchEnd);
+
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('touchend', onTouchEnd);
+      canvas.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, []);
 
   const catalog = LIBRARY.map(group => ({
     ...group,
@@ -209,7 +281,6 @@ export default function App() {
     return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); };
   }, [isTesting, selectedIndices, levelData, undo, redo, setLevelData, gridSize]);
 
-  // ✅ GÜNCELLENDİ: Render döngüsüne Smart Guides eklendi
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -221,7 +292,7 @@ export default function App() {
       lastTimeRef.current = time;
 
       if (isTesting && testState) {
-        update(testState, testKeysRef.current, dt, 'BOTH', true); 
+        update(testState, testKeysRef.current, dt, testControlledPlayerRef.current, true);
         renderWorld(ctx, testState);
       } else {
         const renderState = { ...levelData, players: [], time: performance.now() / 1000 };
@@ -235,12 +306,22 @@ export default function App() {
             ctx.setLineDash([4, 4]);
             ctx.strokeRect(p.x - 2, p.y - 2, p.w + 4, p.h + 4);
             ctx.setLineDash([]);
+
+            if (selectedIndices.length === 1) {
+              const handles = getResizeHandles(p);
+              handles.forEach(h => {
+                ctx.fillStyle = '#72dcff';
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1.5;
+                ctx.fillRect(h.x - 5, h.y - 5, 10, 10);
+                ctx.strokeRect(h.x - 5, h.y - 5, 10, 10);
+              });
+            }
           }
         });
 
-        // ✅ YENİ: Smart Guides (Hizalama Çizgileri) Çizimi
         if (guides.v.length > 0 || guides.h.length > 0) {
-          ctx.strokeStyle = '#ff4757'; // Kırmızı kılavuz
+          ctx.strokeStyle = '#ff4757';
           ctx.lineWidth = 1.5;
           ctx.setLineDash([5, 5]);
           
@@ -277,7 +358,6 @@ export default function App() {
     setZoom(z => Math.min(Math.max(0.2, z + -e.deltaY * 0.001), 3));
   };
 
-  // ✅ GÜNCELLENDİ: GridSize'a göre koordinat
   const getGridCoords = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
     const scaleX = canvasRef.current.width / rect.width;
@@ -292,7 +372,8 @@ export default function App() {
   };
 
   const onPointerDown = (e) => {
-    if (isTesting) return;
+    if (isPinchingRef.current) return;
+	if (isTesting) return;
     if (isPanning || e.button === 1) {
       e.preventDefault();
       panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
@@ -301,15 +382,37 @@ export default function App() {
     }
 
     const { x, y } = getGridCoords(e);
+	
+    if (selectedTool === 'select' && selectedIndices.length === 1) {
+      const p = levelData.platforms[selectedIndices[0]];
+      if (p) {
+        const handles = getResizeHandles(p);
+        const hitSize = 12;
+        for (const h of handles) {
+          if (Math.abs(x - h.x) <= hitSize && Math.abs(y - h.y) <= hitSize) {
+            setResizeTarget({
+              index: selectedIndices[0],
+              handle: h.id,
+              startX: x, startY: y,
+              origX: p.x, origY: p.y, origW: p.w, origH: p.h
+            });
+            return;
+          }
+        }
+      }
+    }
 
     if (selectedTool === 'select') {
       const index = levelData.platforms.findIndex(p => x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h);
       const isMultiSelect = e.ctrlKey || e.metaKey || e.shiftKey;
       
       if (index !== -1) {
-        let newIndices = isMultiSelect 
-          ? (selectedIndices.includes(index) ? selectedIndices.filter(i => i !== index) : [...selectedIndices, index])
-          : [index];
+        let newIndices;
+        if (isMultiSelect) {
+          newIndices = selectedIndices.includes(index) ? selectedIndices.filter(i => i !== index) : [...selectedIndices, index];
+        } else {
+          newIndices = selectedIndices.includes(index) ? selectedIndices : [index];
+        }
         setSelectedIndices(newIndices);
         if (newIndices.length > 0) {
           setDragTarget({ type: 'platforms', indices: newIndices });
@@ -347,9 +450,9 @@ export default function App() {
       setLevelData({ ...levelData, platforms: newPlatforms }); return;
     }
 	
-	   if (selectedTool === 'box' || selectedTool === 'key' || selectedTool === 'door') {
+    if (selectedTool === 'box' || selectedTool === 'key' || selectedTool === 'door') {
        let w = 40, h = 40;
-       if (selectedTool === 'door') h = 80; // Kapı daha uzun olsun
+       if (selectedTool === 'door') h = 80;
        if (selectedTool === 'key') { w = 20; h = 20; }
        
        const newPlatform = { x, y, w, h, brackets: false };
@@ -362,7 +465,7 @@ export default function App() {
        return;
     }
 	
-	if (selectedTool === 'lever' || selectedTool === 'leverTarget') {
+    if (selectedTool === 'lever' || selectedTool === 'leverTarget') {
       const w = selectedTool === 'lever' ? 30 : 100;
       const h = selectedTool === 'lever' ? 60 : 20;
       const newPlatform = { 
@@ -379,13 +482,12 @@ export default function App() {
       setLevelData({ ...levelData, platforms: newPlatforms });
       return;
     }
-    // ✅ Çizim yapılacaklar listesi
+
     if (['platform', 'wall', 'platformBlue', 'platformPink', 'platformTimer', 'platformRemote', 'buttonBlue', 'buttonPink', 'platformMoving', 'hazard', 'collectible', 'trampoline', 'laser'].includes(selectedTool)) {
       setDrawStart({ x, y }); setDrawCurrent({ x, y });
     }
   };
 
-  // ✅ GÜNCELLENDİ: Smart Guides Mantığı (Hareket ederken hizala)
   const onPointerMove = (e) => {
     if (isTesting) return;
     if (isPanning && e.buttons === 4 || (isPanning && e.type === 'touchmove') || (isPanning && e.buttons === 1)) {
@@ -394,11 +496,38 @@ export default function App() {
     }
 
     const { x, y } = getGridCoords(e);
+	
+    if (resizeTarget) {
+      const { handle, startX, startY, origX, origY, origW, origH, index } = resizeTarget;
+      const dx = x - startX;
+      const dy = y - startY;
+      let newX = origX, newY = origY, newW = origW, newH = origH;
+      const minSize = gridSnap ? gridSize : 10;
+
+      if (handle.includes('e')) newW = Math.max(minSize, origW + dx);
+      if (handle.includes('s')) newH = Math.max(minSize, origH + dy);
+      if (handle.includes('w')) { newW = Math.max(minSize, origW - dx); newX = origX + origW - newW; }
+      if (handle.includes('n')) { newH = Math.max(minSize, origH - dy); newY = origY + origH - newH; }
+
+      if (gridSnap) {
+        newX = Math.round(newX / gridSize) * gridSize;
+        newY = Math.round(newY / gridSize) * gridSize;
+        newW = Math.max(gridSize, Math.round(newW / gridSize) * gridSize);
+        newH = Math.max(gridSize, Math.round(newH / gridSize) * gridSize);
+      }
+
+      const newPlatforms = [...levelRef.current.platforms];
+      newPlatforms[index] = { ...newPlatforms[index], x: newX, y: newY, w: newW, h: newH };
+      const newLevel = { ...levelRef.current, platforms: newPlatforms };
+      levelRef.current = newLevel;
+      setLevelData(newLevel, { commit: false });
+      return;
+    }
 
     if (isDragging && dragTarget) {
       didDragRef.current = true;
       let newLevel = { ...levelRef.current };
-      setGuides({ v: [], h: [] }); // Kılavuzları sıfırla
+      setGuides({ v: [], h: [] });
 
       if (dragTarget.type === 'platforms') {
         const dx = x - dragOffset.x;
@@ -406,7 +535,6 @@ export default function App() {
         const newPlatforms = [...newLevel.platforms];
         let primaryIndex = dragTarget.indices[0];
 
-        // 1. Önce tüm seçili objeleri standart grid'e göre taşı
         dragTarget.indices.forEach(idx => {
           const startPos = dragStartPositionsRef.current[idx];
           if (startPos) {
@@ -420,26 +548,21 @@ export default function App() {
           }
         });
 
-        // 2. Smart Guides (Akıllı Hizalama)
         const primaryP = newPlatforms[primaryIndex];
-        const threshold = 5; // 5px yaklaşırsa hizala
+        const threshold = 5;
         let vGuides = [];
         let hGuides = [];
 
-        // Kanvas merkezine hizala
         if (Math.abs((primaryP.x + primaryP.w / 2) - WIDTH / 2) < threshold) vGuides.push(WIDTH / 2);
         if (Math.abs((primaryP.y + primaryP.h / 2) - HEIGHT / 2) < threshold) hGuides.push(HEIGHT / 2);
 
-        // Diğer objelere hizala
         newLevel.platforms.forEach((plat, i) => {
-          if (dragTarget.indices.includes(i)) return; // Kendini es geç
+          if (dragTarget.indices.includes(i)) return;
 
-          // X Hizalamaları
           if (Math.abs(primaryP.x - plat.x) < threshold) vGuides.push(plat.x);
           if (Math.abs((primaryP.x + primaryP.w) - (plat.x + plat.w)) < threshold) vGuides.push(plat.x + plat.w);
           if (Math.abs((primaryP.x + primaryP.w / 2) - (plat.x + plat.w / 2)) < threshold) vGuides.push(plat.x + plat.w / 2);
 
-          // Y Hizalamaları
           if (Math.abs(primaryP.y - plat.y) < threshold) hGuides.push(plat.y);
           if (Math.abs((primaryP.y + primaryP.h) - (plat.y + plat.h)) < threshold) hGuides.push(plat.y + plat.h);
           if (Math.abs((primaryP.y + primaryP.h / 2) - (plat.y + plat.h / 2)) < threshold) hGuides.push(plat.y + plat.h / 2);
@@ -466,7 +589,13 @@ export default function App() {
 
   const onPointerUp = (e) => {
     if (isTesting) return;
-    setGuides({ v: [], h: [] }); // Sürükleme bitince kılavuzları temizle
+    setGuides({ v: [], h: [] });
+	
+    if (resizeTarget) {
+      setLevelData(levelRef.current, { commit: true });
+      setResizeTarget(null);
+      return;
+    }
     
     if (isPanning) { if (!e.code || e.code !== 'Space') setIsPanning(false); return; }
     if (isDragging) {
@@ -474,7 +603,7 @@ export default function App() {
       didDragRef.current = false; setIsDragging(false); setDragTarget(null); return;
     }
 
-        if (!drawStart || !drawCurrent) return;
+    if (!drawStart || !drawCurrent) return;
     const isClick = drawStart.x === drawCurrent.x && drawStart.y === drawCurrent.y;
 
     if (isClick) {
@@ -484,10 +613,9 @@ export default function App() {
         setDrawCurrent({ x: drawStart.x + 40, y: drawStart.y + 80 });
       } else if (selectedTool === 'box') {
         setDrawCurrent({ x: drawStart.x + 40, y: drawStart.y + 40 });
-      }else if (selectedTool === 'laser') {
-        setDrawCurrent({ x: drawStart.x + 100, y: drawStart.y + 20 }); // ✅ YENİ: Yatay Lazer
-      }else { setDrawStart(null); setDrawCurrent(null); return; }
-	  
+      } else if (selectedTool === 'laser') {
+        setDrawCurrent({ x: drawStart.x + 100, y: drawStart.y + 20 });
+      } else { setDrawStart(null); setDrawCurrent(null); return; }
     }
 
     const x = Math.min(drawStart.x, drawCurrent.x); const y = Math.min(drawStart.y, drawCurrent.y);
@@ -511,10 +639,10 @@ export default function App() {
       case 'platformMoving': newPlatform.color = 'platformNeutral'; newPlatform.isMoving = true;  newPlatform.moveAxis = 'x'; newPlatform.moveSpeed = 2; newPlatform.moveRange = 100; break;
       case 'hazard': newPlatform.isHazard = true; break;
       case 'collectible': newPlatform.isCollectible = true; newPlatform.collected = false; break;
-	  case 'box': newPlatform.isBox = true; newPlatform.color = 'platformNeutral'; break;
+      case 'box': newPlatform.isBox = true; newPlatform.color = 'platformNeutral'; break;
       case 'key': newPlatform.isKey = true; break;
       case 'door': newPlatform.isDoor = true; newPlatform.color = 'platformNeutral'; break;
-	  case 'laser': newPlatform.isLaser = true; newPlatform.isMoving = true; newPlatform.moveAxis = 'x'; newPlatform.moveSpeed = 2;
+      case 'laser': newPlatform.isLaser = true; newPlatform.isMoving = true; newPlatform.moveAxis = 'x'; newPlatform.moveSpeed = 2;
         newPlatform.moveRange = 150;
         break;
     }
@@ -541,7 +669,6 @@ export default function App() {
     }
   };
 
-  // ✅ YENİ: Katman Sırası Değiştirme Fonksiyonu
   const moveLayer = (action) => {
     if (selectedIndices.length !== 1) return;
     const idx = selectedIndices[0];
@@ -572,6 +699,27 @@ export default function App() {
     
     setLevelData({ ...levelData, platforms: newPlatforms });
   };
+  
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 1024;
+  });
+  useEffect(() => {
+    const mq = window.matchMedia('(pointer: coarse)');
+    const handler = () => setIsMobile(mq.matches || window.innerWidth <= 1024);
+    mq.addEventListener?.('change', handler);
+    window.addEventListener('resize', handler);
+    return () => { mq.removeEventListener?.('change', handler); window.removeEventListener('resize', handler); };
+  }, []);
+
+  const [testControlledPlayer, setTestControlledPlayer] = useState('BOTH');
+  const testControlledPlayerRef = useRef('BOTH');
+
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => { panRef.current = pan; }, [pan]);
+  const isPinchingRef = useRef(false);
 
   const handleAddLevel = () => {
     const newLevels = [...levels, { name: `Seviye ${levels.length + 1}`, data: JSON.parse(JSON.stringify(DEFAULT_LEVEL)) }];
@@ -615,18 +763,65 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const parsed = JSON.parse(e.target.result);
-        if (parsed.platforms && parsed.blueSpawn) {
-          setLevelData(parsed, { commit: true });
-        } else { alert("Geçersiz seviye dosyası!"); }
-      } catch (err) { alert("Dosya okunamadı: " + err.message); }
+        let text = e.target.result;
+        text = text.replace(/\/\/.*$/gm, '');
+        text = text.replace(/,\s*([\]}])/g, '$1');
+
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch (err) {
+          if (!text.trim().startsWith('{')) {
+            text = '{' + text + '}';
+            parsed = JSON.parse(text);
+          } else {
+            throw err;
+          }
+        }
+
+        if (parsed.platforms) {
+          const newPlatforms = [...parsed.platforms];
+
+          if (parsed.levers && Array.isArray(parsed.levers)) {
+            parsed.levers.forEach(l => {
+              newPlatforms.push({
+                x: l.x, y: l.y, w: 30, h: 60,
+                isLever: true, leverColor: l.type || 'green',
+                color: 'platformNeutral', brackets: false
+              });
+            });
+          }
+
+          if (parsed.gems && Array.isArray(parsed.gems)) {
+            parsed.gems.forEach(g => {
+              newPlatforms.push({
+                x: g.x, y: g.y, w: 20, h: 20,
+                isCollectible: true, color: g.type === 'blue' ? 'platformBlue' : 'platformPink',
+                brackets: false
+              });
+            });
+          }
+
+          const finalLevel = {
+            platforms: newPlatforms,
+            blueSpawn: parsed.blueSpawn || parsed.blue || { x: 100, y: 360 },
+            pinkSpawn: parsed.pinkSpawn || parsed.redSpawn || parsed.pink || { x: 160, y: 360 },
+            backgroundImage: parsed.backgroundImage || null
+          };
+
+          setLevelData(finalLevel, { commit: true });
+        } else {
+          alert("Geçersiz seviye dosyası: 'platforms' dizisi bulunamadı!");
+        }
+      } catch (err) { 
+        alert("Dosya okunamadı. JSON formatı hatalı olabilir.\nHata: " + err.message); 
+      }
     };
     reader.readAsText(file);
     event.target.value = '';
   };
   
-    // ✅ YENİ: Eksik olan Resim Yükleme Fonksiyonu (Geri eklendi)
-    const readImage = (event, kind) => {
+  const readImage = (event, kind) => {
     const file = event.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -647,6 +842,9 @@ export default function App() {
       testKeysRef.current = {}; 
       setIsPanning(false);
       lastTimeRef.current = performance.now();
+      const initialPlayer = isMobile ? 'P1' : 'BOTH';
+      testControlledPlayerRef.current = initialPlayer;
+      setTestControlledPlayer(initialPlayer);
       setTestState(createState(levelData, { p1: 'platformBlue', p2: 'platformPink' }, true)); 
       setIsTesting(true); 
     }
@@ -760,7 +958,6 @@ export default function App() {
           {timelineOpen && <div className="timeline-controls">
             <div className="timeline-setting">Izgara</div>
             <button className="dropdown-setting" onClick={() => setGridSnap(!gridSnap)}> {gridSnap ? 'Açık' : 'Kapalı'} <ChevronDown size={17}/></button>
-            {/* ✅ YENİ: Grid Boyutu Seçici */}
             <select 
               value={gridSize} 
               onChange={(e) => setGridSize(Number(e.target.value))}
@@ -772,7 +969,7 @@ export default function App() {
             </select>
             <div className="timeline-divider"/>
             <div className="layer-label">Katmanlar (Layers)</div><Toggle checked={showLayers} onChange={setShowLayers} label="Katmanları göster"/>
-            {showLayers && <div className="layer-popover"><b>Platformlar</b><span>{levelData.platforms.length} nesne</span>{levelData.platforms.map((obj, i) => <button key={i} onClick={() => setSelectedIndices([i])}>{obj.isGoal ? '🚩 Hedef' : obj.isTimer ? '⏱ Zaman' : '🧱 Zemin'} ({i})</button>)}</div>}
+            
           </div>}
         </section>
 
@@ -804,47 +1001,78 @@ export default function App() {
 
               <div className="toggle-row"><span>Renk Değiştirsin mi?</span><Toggle checked={selectedPlatform?.changeable || false} onChange={v => updateSelectedPlatform('changeable', v)} label="Renk değiştirme"/></div>
               <div className="toggle-row"><span>Duvar (Yanlardan Çarpılır)</span><Toggle checked={selectedPlatform?.isWall || false} onChange={v => updateSelectedPlatform('isWall', v)} label="Duvar modu"/></div>
-			  {/* ✅ YENİ: Kırılabilir Platform Toggle'ı */}
               <div className="toggle-row"><span>Kırılabilir mi?</span><Toggle checked={selectedPlatform?.isBreakable || false} onChange={v => updateSelectedPlatform('isBreakable', v)} label="Kırılabilir platform"/></div>
             
               {selectedPlatform && (selectedPlatform.isLever || selectedPlatform.isLeverTarget) && (
-  <div style={{ marginTop: 15, padding: 10, background: '#13131f', borderRadius: 6, border: '1px solid #2a2a40' }}>
-    <h4 style={{ margin: '0 0 10px', color: '#f1c40f', fontSize: 13 }}>🎨 Renk Seçimi</h4>
-    <div style={{ display: 'flex', gap: 8 }}>
-      {LEVER_COLORS.map(lc => (
-        <button
-          key={lc.id}
-          onClick={() => updateSelectedPlatform('leverColor', lc.id)}
-          title={lc.label}
-          style={{
-            width: 40, height: 40, borderRadius: 6, background: lc.color,
-            border: selectedPlatform.leverColor === lc.id ? '3px solid #fff' : '2px solid #333',
-            cursor: 'pointer',
-            boxShadow: selectedPlatform.leverColor === lc.id ? `0 0 15px ${lc.color}` : 'none',
-          }}
-        />
-      ))}
-    </div>
-    <p style={{ fontSize: 11, color: '#888', marginTop: 8, marginBottom: 0 }}>
-      Aynı renkteki kol ve hedef platform birbirine bağlıdır.
-    </p>
-  </div>
-)}
+                <div style={{ marginTop: 15, padding: 10, background: '#13131f', borderRadius: 6, border: '1px solid #2a2a40' }}>
+                  <h4 style={{ margin: '0 0 10px', color: '#f1c40f', fontSize: 13 }}>🎨 Renk Seçimi</h4>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {LEVER_COLORS.map(lc => (
+                      <button
+                        key={lc.id}
+                        onClick={() => updateSelectedPlatform('leverColor', lc.id)}
+                        title={lc.label}
+                        style={{
+                          width: 40, height: 40, borderRadius: 6, background: lc.color,
+                          border: selectedPlatform.leverColor === lc.id ? '3px solid #fff' : '2px solid #333',
+                          cursor: 'pointer',
+                          boxShadow: selectedPlatform.leverColor === lc.id ? `0 0 15px ${lc.color}` : 'none',
+                        }}
+                      />
+                    ))}
+                  </div>
 
-{selectedPlatform?.isLeverTarget && (
-  <div style={{ marginTop: 15, padding: 10, background: '#1e1333', borderRadius: 6, border: '1px solid #b388ff' }}>
-    <h4 style={{ margin: '0 0 10px', color: '#b388ff', fontSize: 13 }}>Hareket Aralığı</h4>
-    <label style={{ fontSize: 11, color: '#ccc' }}>Maksimum Mesafe: ±{selectedPlatform.moveRange || 100}px</label>
-    <input 
-      type="range" min="20" max="300" step="20" 
-      value={selectedPlatform.moveRange || 100} 
-      onChange={e => updateSelectedPlatform('moveRange', Number(e.target.value))} 
-      style={{ width: '100%' }} 
-    />
-  </div>
-)}
+                  {/* ✅ YENİ: Kol başlangıç yönü */}
+                  {selectedPlatform.isLever && (
+                    <div style={{ marginTop: 12 }}>
+                      <h4 style={{ margin: '0 0 8px', color: '#f1c40f', fontSize: 12 }}>Başlangıç Yönü</h4>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button 
+                          onClick={() => updateSelectedPlatform('leverState', 0)} 
+                          style={{ 
+                            flex: 1, padding: '8px', 
+                            background: (selectedPlatform.leverState || 0) === 0 ? '#3498db' : '#2a2a40', 
+                            color: '#fff', border: '1px solid #333', borderRadius: 4, 
+                            cursor: 'pointer', fontWeight: 'bold', fontSize: 12 
+                          }}
+                        >
+                          ← Sola Eğik
+                        </button>
+                        <button 
+                          onClick={() => updateSelectedPlatform('leverState', 1)} 
+                          style={{ 
+                            flex: 1, padding: '8px', 
+                            background: selectedPlatform.leverState === 1 ? '#3498db' : '#2a2a40', 
+                            color: '#fff', border: '1px solid #333', borderRadius: 4, 
+                            cursor: 'pointer', fontWeight: 'bold', fontSize: 12 
+                          }}
+                        >
+                          Sağa Eğik →
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <p style={{ fontSize: 11, color: '#888', marginTop: 8, marginBottom: 0 }}>
+                    Aynı renkteki kol ve hedef platform birbirine bağlıdır.
+                  </p>
+                </div>
+              )}
+
+              {selectedPlatform?.isLeverTarget && (
+                <div style={{ marginTop: 15, padding: 10, background: '#1e1333', borderRadius: 6, border: '1px solid #b388ff' }}>
+                  <h4 style={{ margin: '0 0 10px', color: '#b388ff', fontSize: 13 }}>Hareket Aralığı</h4>
+                  <label style={{ fontSize: 11, color: '#ccc' }}>Maksimum Mesafe: ±{selectedPlatform.moveRange || 100}px</label>
+                  <input 
+                    type="range" min="20" max="300" step="20" 
+                    value={selectedPlatform.moveRange || 100} 
+                    onChange={e => updateSelectedPlatform('moveRange', Number(e.target.value))} 
+                    style={{ width: '100%' }} 
+                  />
+                </div>
+              )}
 			  
-			  {selectedPlatform?.isMoving && (
+              {selectedPlatform?.isMoving && (
                 <div style={{ marginTop: 15, padding: 10, background: '#1e1333', borderRadius: 6, border: '1px solid #b388ff' }}>
                   <h4 style={{ margin: '0 0 10px', color: '#b388ff', fontSize: 13 }}>Hareket Ayarları</h4>
                   <div className="toggle-row">
@@ -875,7 +1103,7 @@ export default function App() {
               </button>
               <input id="tex-input" className="hidden-input" type="file" accept="image/*" onChange={e => readImage(e, 'texture')} disabled={selectedIndices.length !== 1}/>
 			  
-			                {/* ✅ YENİ: Dokuyu Kaldır Butonu */}
+              {/* ✅ YENİ: Dokuyu Kaldır Butonu */}
               {selectedPlatform?.sprite && (
                 <button 
                   onClick={() => updateSelectedPlatform('sprite', null)}
@@ -898,7 +1126,7 @@ export default function App() {
               </button>
               <input id="bg-input" className="hidden-input" type="file" accept="image/*" onChange={e => readImage(e, 'background')}/>
 			  
-			                {/* ✅ YENİ: Arka Planı Kaldır Butonu */}
+              {/* ✅ YENİ: Arka Planı Kaldır Butonu */}
               {levelData.backgroundImage && (
                 <button 
                   onClick={() => setLevelData({ ...levelData, backgroundImage: null }, { commit: true })}
@@ -918,7 +1146,6 @@ export default function App() {
               <h3>Sahne Ayarları</h3>
               <div className="toggle-row"><span>Izgara (Snap)</span><Toggle checked={gridSnap} onChange={setGridSnap} label="Izgaraya yasla"/></div>
               
-              {/* ✅ YENİ: Toplu Renk Değiştirme (Multi-Color) */}
               <div style={{ marginTop: 15 }}>
                 <span style={{ fontSize: 11, color: '#fff', fontWeight: 'bold', display: 'block', marginBottom: 8 }}>RENK PALETİ (Toplu Seçim Destekli)</span>
                 <div className="swatch-grid">
@@ -939,6 +1166,49 @@ export default function App() {
             </section>
 
             <section className="inspector-section object-actions">
+              {showLayers && (
+                <div style={{ 
+                  marginTop: 15, 
+                  padding: 12, 
+                  background: '#1b2943', 
+                  border: '1px solid #6b84b7', 
+                  borderRadius: 8,
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: 6 
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <b style={{ color: '#fff', fontSize: 13 }}>Platformlar</b>
+                    <span style={{ color: '#9aa9c6', fontSize: 12 }}>{levelData.platforms.length} nesne</span>
+                  </div>
+                  
+                  <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {levelData.platforms.map((obj, i) => (
+                      <button 
+                        key={i} 
+                        onClick={() => setSelectedIndices([i])} 
+                        style={{ 
+                          padding: '6px 8px', 
+                          background: selectedIndices.includes(i) ? '#3498db' : '#253650', 
+                          border: '1px solid #3d557c', 
+                          borderRadius: 4, 
+                          color: '#fff', 
+                          textAlign: 'left', 
+                          cursor: 'pointer',
+                          fontSize: 12,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <span>{obj.isGoal ? '🚩' : obj.isTimer ? '⏱' : obj.isBox ? '📦' : obj.isLaser ? '⚡' : '🧱'}</span>
+                        <span style={{ flex: 1 }}>{obj.isGoal ? 'Hedef' : obj.isTimer ? 'Zamanlayıcı' : obj.isBox ? 'Kutu' : obj.isLaser ? 'Lazer' : 'Zemin'}</span>
+                        <span style={{ color: '#888', fontSize: 10 }}>#{i}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <h3>Seçili Varlık</h3>
               <div className="object-summary">
                 {selectedIndices.length === 1 ? (
@@ -955,7 +1225,16 @@ export default function App() {
         </aside>
       </main>
       
-      {isTesting && <div className="test-banner"><span><Play size={13} fill="currentColor"/> Test modu açık. (P1: WASD, P2: Yön Tuşları)</span><button onClick={handleTestToggle}><X size={15}/></button></div>}
+      {isTesting && isMobile && (
+        <MobileTestControls
+          player={testControlledPlayer}
+          setPlayer={setTestControlledPlayer}
+          playerRef={testControlledPlayerRef}
+          testKeysRef={testKeysRef}
+        />
+      )}
+	  
+      {isTesting && <div className="test-banner"><span><Play size={13} fill="currentColor"/> Test modu açık. {isMobile ? '(Joystick ile kontrol et)' : '(P1: WASD, P2: Yön Tuşları)'}</span><button onClick={handleTestToggle}><X size={15}/></button></div>}
     </div>
   );
 }
