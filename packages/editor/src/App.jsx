@@ -1165,7 +1165,7 @@ export default function App() {
               </div>
             </section>
 
-            <section className="inspector-section object-actions" style={{ marginTop: 30, paddingTop: 20 }}>
+            <section className="inspector-section object-actions" style={{ marginTop: 1, paddingTop: 1 }}>
               {showLayers && (
                 <div style={{ 
                   marginTop: 15, 
