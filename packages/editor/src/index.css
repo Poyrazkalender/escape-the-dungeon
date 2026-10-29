@@ -15,12 +15,12 @@
   --purple: #b965e9;
 }
 * { box-sizing: border-box; }
-html, body, #root { width: 100%; height: 100%; margin: 0; }
+html, body, #root { width: 100%; height: 100%; margin: 0; padding:0; overflow:hidden; }
 body { overflow: hidden; }
 button, input { font: inherit; }
 button { color: inherit; cursor: pointer; }
 button:focus-visible, input:focus-visible { outline: 2px solid #78dfff; outline-offset: 2px; }
-.app-shell { width: 100vw; height: 100vh; min-width: 940px; min-height: 650px; overflow: hidden; padding: 14px 16px 15px; background: radial-gradient(ellipse at 49% -12%, rgba(112, 98, 145, .44), transparent 44%), linear-gradient(133deg, #202947 0%, #292642 49%, #643e64 100%); position: relative; }
+.app-shell { width: 100vw; height: 100vh; height: 100dvh; min-width: 940px; min-height: 650px; overflow: hidden; padding: 14px 16px 15px; background: radial-gradient(ellipse at 49% -12%, rgba(112, 98, 145, .44), transparent 44%), linear-gradient(133deg, #202947 0%, #292642 49%, #643e64 100%); position: relative; box-sizing: border-box; }
 .panel { background: var(--panel); border: 1px solid rgba(102, 133, 195, .86); border-radius: 17px; box-shadow: 0 0 0 1px rgba(84, 121, 195, .16), 0 8px 17px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255,255,255,.035); }
 .topbar { height: 76px; display: grid; grid-template-columns: minmax(290px, 1fr) auto minmax(220px, .8fr); align-items: center; padding: 0 20px 0 13px; margin-bottom: 16px; gap: 12px; position: relative; z-index: 4; border-radius: 17px; }
 .brand-area, .brand-mark, .header-actions, .top-tools { display: flex; align-items: center; }
