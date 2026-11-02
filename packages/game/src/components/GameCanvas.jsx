@@ -4,7 +4,7 @@ import TouchControls from './TouchControls';
 import { joinRoom } from '@trystero-p2p/mqtt'; 
 import { LEVELS } from '../game/levels';
 
-export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P1', selectedTool, customColor, customSprite, customSpriteTouched, levelData, onLevelChange, isMobile, characters, roomId, currentLevelIndex, setCurrentLevelIndex, onExit }) {
+export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P1', selectedTool, customColor, customSprite, customSpriteTouched, levelData, onLevelChange, isMobile, characters, roomId, isLocalCoop,  currentLevelIndex, setCurrentLevelIndex, onExit }) {
   const canvasRef = useRef(null);
   const stateRef = useRef(null);
   const keysRef = useRef({});
@@ -47,19 +47,18 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
 
   useEffect(() => {
     if (isEditing) return;
-    stateRef.current = createState(levelData, localCharacters, isTesting);
+    stateRef.current = createState(levelData, localCharacters, isTesting || isLocalCoop);
     hasPublishedComplete.current = false;
     hasPublishedRestart.current = false;
     keysRef.current = {}; 
     setIsComplete(false);
-  }, [levelData, localCharacters, isTesting, isEditing]);
+  }, [levelData, localCharacters, isTesting, isEditing, isLocalCoop]);
 
   useEffect(() => {
     return () => clearImageCache();
   }, []);
 
-  useEffect(() => {
-    if (!roomId || isEditing) return;
+  useEffect(() => { if (!roomId || isEditing || isLocalCoop) return;    
 
     const room = joinRoom({ appId: 'love-game' }, roomId);
     roomRef.current = room;
@@ -188,7 +187,8 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
       const state = stateRef.current;
 
       if (!isEditing && state) {
-        update(state, keysRef.current, dt, controlledPlayerRef.current, isTestingRef.current);
+        const activeControl = isLocalCoop ? 'BOTH' : controlledPlayerRef.current;
+		update(state, keysRef.current, dt, activeControl, isTestingRef.current);
 
         if (state.levelComplete && !isCompleteRef.current) {
           setIsComplete(true);
@@ -218,7 +218,7 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
               state.buttonStateChanged = null;
             }
 
-            if (playerStateActionRef.current && roomId && time - lastPublishedTime.current > 50) {
+            if (!isLocalCoop && playerStateActionRef.current && roomId && time - lastPublishedTime.current > 50) {
               const myPlayer = state.players[0];
               playerStateActionRef.current.send({
                 color: myPlayer.color,
@@ -276,13 +276,13 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [isEditing, levelData, drawStart, drawCurrent, roomId]);
+  }, [isEditing, levelData, drawStart, drawCurrent, roomId, isLocalCoop]);
 
   const handleNextLevel = () => {
-    if (!roomId) return;
+    
     const nextIndex = currentLevelIndex + 1;
     if (nextIndex < LEVELS.length) {
-      if (levelActionRef.current) levelActionRef.current.send(nextIndex);
+      if (roomId && levelActionRef.current) levelActionRef.current.send(nextIndex);
       setCurrentLevelIndex(nextIndex);
     } else {
       handleExit();
@@ -392,7 +392,7 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
     ? { left: 'ArrowLeft', right: 'ArrowRight', jump: 'ArrowUp' } 
     : { left: 'KeyA', right: 'KeyD', jump: 'KeyW' };
 
-  return (
+return (
     <div style={{ position: 'relative', width: '100%', maxWidth: WIDTH, display: 'flex', justifyContent: 'center' }}>
       <canvas 
         ref={canvasRef} width={WIDTH} height={HEIGHT} 
@@ -414,7 +414,17 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
           <p style={{ color: '#fff', fontSize: 20, marginTop: 10, marginBottom: 30 }}>Seviyeyi başarıyla tamamladınız.</p>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: 15, width: 250 }}>
-            {roomId ? (
+            {/* ✅ DÜZELTİLEN KISIM: roomId yerine isEditing || isTesting kontrolü */}
+            {(isEditing || isTesting) ? (
+              <>
+                <button onClick={handleExit} style={{ padding: 15, background: '#3498db', color: '#fff', border: 'none', borderRadius: 8, fontSize: 18, fontWeight: 'bold', cursor: 'pointer' }}>
+                  ✏️ DÜZENLEMEYE DÖN
+                </button>
+                <button onClick={handleRestartLevel} style={{ padding: 15, background: '#f39c12', color: '#fff', border: 'none', borderRadius: 8, fontSize: 18, fontWeight: 'bold', cursor: 'pointer' }}>
+                  🔄 YENİDEN TEST ET
+                </button>
+              </>
+            ) : (
               <>
                 <button onClick={handleNextLevel} style={{ padding: 15, background: '#27ae60', color: '#fff', border: 'none', borderRadius: 8, fontSize: 18, fontWeight: 'bold', cursor: 'pointer' }}>
                   ⏭ SONRAKİ SEVİYE
@@ -424,15 +434,6 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
                 </button>
                 <button onClick={handleExit} style={{ padding: 15, background: '#e74c3c', color: '#fff', border: 'none', borderRadius: 8, fontSize: 18, fontWeight: 'bold', cursor: 'pointer' }}>
                   🚪 ANA MENÜ
-                </button>
-              </>
-            ) : (
-              <>
-                <button onClick={handleExit} style={{ padding: 15, background: '#3498db', color: '#fff', border: 'none', borderRadius: 8, fontSize: 18, fontWeight: 'bold', cursor: 'pointer' }}>
-                  ✏️ DÜZENLEMEYE DÖN
-                </button>
-                <button onClick={handleRestartLevel} style={{ padding: 15, background: '#f39c12', color: '#fff', border: 'none', borderRadius: 8, fontSize: 18, fontWeight: 'bold', cursor: 'pointer' }}>
-                  🔄 YENİDEN TEST ET
                 </button>
               </>
             )}

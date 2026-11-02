@@ -1,0 +1,43 @@
+{
+  "platforms": [
+    {
+      "x": 620,
+      "y": 160,
+      "w": 100,
+      "h": 20,
+      "color": "platformNeutral",
+      "isGoal": true,
+      "brackets": true,
+      "customColor": "#171f36"
+    },
+    {
+      "x": 40,
+      "y": 460,
+      "w": 900,
+      "h": 20,
+      "brackets": true,
+      "color": "platformNeutral",
+      "changeable": false,
+      "isWall": false
+    },
+    {
+      "x": 420,
+      "y": 360,
+      "w": 40,
+      "h": 80,
+      "brackets": true,
+      "color": "platformNeutral",
+      "isTrampoline": true,
+      "isWall": false
+    }
+  ],
+  "blueSpawn": {
+    "x": 180,
+    "y": 320
+  },
+  "pinkSpawn": {
+    "x": 259,
+    "y": 308
+  },
+  "backgroundImage": null
+}

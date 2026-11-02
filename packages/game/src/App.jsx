@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import GameCanvas from './components/GameCanvas';
-import LevelEditor from './components/LevelEditor';
 import { LEVELS as INITIAL_LEVELS } from './game/levels';
 
 const FIXED_CHARACTERS = { p1: 'platformBlue', p2: 'platformPink' };
@@ -22,6 +21,7 @@ export default function App() {
   const [levelData, setLevelData] = useState(INITIAL_LEVELS[0]);
   const [isTesting, setIsTesting] = useState(false);
   const [testPlayer, setTestPlayer] = useState('P1'); 
+    const [isLocalCoop, setIsLocalCoop] = useState(false); // ✅ YENİ
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 1024 || navigator.maxTouchPoints > 0);
@@ -51,7 +51,7 @@ export default function App() {
 
   const startGame = (mobileMode) => {
     setIsMobile(mobileMode);
-    if (!roomId.trim()) {
+    if (!isLocalCoop && !roomId.trim()) {
       const randomCode = Math.floor(1000 + Math.random() * 9000).toString();
       setRoomId(randomCode);
     }
@@ -109,6 +109,15 @@ export default function App() {
           <button onClick={() => startGame(false)} style={{ padding: '20px 40px', fontSize: 24, background: '#3498db', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold' }}>💻 Bilgisayar</button>
           <button onClick={() => startGame(true)} style={{ padding: '20px 40px', fontSize: 24, background: '#e84393', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold' }}>📱 Mobil / Tablet</button>
         </div>
+		
+		        {/* ✅ YENİ: Yerel 2 Kişilik Butonu */}
+        <button 
+          onClick={() => { setIsLocalCoop(true); startGame(false); }} 
+          style={{ padding: '15px 30px', fontSize: 20, background: '#27ae60', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold', marginBottom: 20 }}
+        >
+          🎮 Yerel 2 Kişilik Oyna (Aynı Klavye)
+        </button>
+		
         <button onClick={() => setScreen('editor')} style={{ padding: '15px 30px', fontSize: 18, background: '#f1c40f', color: '#000', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold' }}>🛠 LEVEL EDİTÖRÜ</button>
       </div>
     );
@@ -183,7 +192,11 @@ export default function App() {
         <GameCanvas 
           isEditing={false} selectedTool={selectedTool} customColor={customColor} customSprite={customSprite} customSpriteTouched={customSpriteTouched}
           levelData={levelData} onLevelChange={handleLevelDataChange} isMobile={isMobile} characters={characters} 
-          roomId={roomId} currentLevelIndex={currentLevelIndex} setCurrentLevelIndex={setCurrentLevelIndex} onExit={handleExitToMenu} 
+          roomId={isLocalCoop ? null: roomId} // ✅ Yerel modda P2P'yi kapat
+		  isLocalCoop={isLocalCoop} // ✅ Yeni Prop
+		  currentLevelIndex={currentLevelIndex}
+		  setCurrentLevelIndex={setCurrentLevelIndex}
+		  onExit={handleExitToMenu} 
         />
       </div>
     </div>
