@@ -11,7 +11,8 @@
     "dev:editor": "npm run dev --workspace=editor",
     "build:game": "npm run build --workspace=game",
     "build:editor": "npm run build --workspace=editor",
-    "lint": "oxlint"
+    "lint": "oxlint",
+    "test:core": "npm test --workspace=game-core"
   },
   "devDependencies": {
     "oxlint": "^1.88.0"

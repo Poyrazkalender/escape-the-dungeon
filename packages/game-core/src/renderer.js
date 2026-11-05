@@ -72,7 +72,72 @@ export function drawPlatforms(ctx, state) {
 	// ✅ YENİ: Kırılan platformu çizme
     if (plat.isBroken) continue; 
 	
-	    // ✅ YENİ: KOL ÇİZİMİ (Switch Mantığı)
+	    // ✅ YENİ: DENGE PLATFORMU (SEESAW) ÇİZİMİ
+    if (plat.isSeesaw) {
+      ctx.save();
+      const cx = plat.x + plat.w / 2;
+      const cy = plat.y + plat.h / 2;
+      const angle = plat.angle || 0;
+
+      // zemindeki gölge
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 34, Math.max(20, plat.w * 0.38), 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // pivot ayağı (üçgen)
+      ctx.fillStyle = plat.isTouched ? '#9a6a3f' : '#8c5b37';
+      ctx.beginPath();
+      ctx.moveTo(cx - 14, cy + 26);
+      ctx.lineTo(cx, cy - 2);
+      ctx.lineTo(cx + 14, cy + 26);
+      ctx.closePath();
+      ctx.fill();
+
+      // pivot tabanı
+      ctx.fillStyle = '#6b4423';
+      ctx.beginPath();
+      ctx.roundRect(cx - 30, cy + 24, 60, 8, 3);
+      ctx.fill();
+
+      // tahta (pivot etrafında döner)
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+      const pw = plat.w, ph = plat.h;
+      const grad = ctx.createLinearGradient(0, -ph / 2, 0, ph / 2);
+      grad.addColorStop(0, '#e2b57f');
+      grad.addColorStop(0.5, '#cf9558');
+      grad.addColorStop(1, '#a9713f');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.roundRect(-pw / 2, -ph / 2, pw, ph, ph / 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(90, 55, 25, 0.85)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(-pw / 2, -ph / 2, pw, ph, ph / 2);
+      ctx.stroke();
+
+      // ahşap damarları
+      ctx.strokeStyle = 'rgba(120, 75, 35, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-pw / 2 + 12, -ph / 6);
+      ctx.lineTo(pw / 2 - 12, -ph / 6);
+      ctx.moveTo(-pw / 2 + 18, ph / 6);
+      ctx.lineTo(pw / 2 - 18, ph / 6);
+      ctx.stroke();
+
+      // mil
+      ctx.fillStyle = '#d7dde8';
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.max(2, ph * 0.18), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      continue;
+    }
+
+    // ✅ YENİ: KOL ÇİZİMİ (Switch Mantığı)
     if (plat.isLever) {
       ctx.save();
       

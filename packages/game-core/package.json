@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "node test/seesaw.test.mjs"
+  },
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js"

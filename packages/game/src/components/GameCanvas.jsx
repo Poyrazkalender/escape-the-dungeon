@@ -119,7 +119,7 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
           setIsComplete(false);
         }
       } else if (data.type === 'manual-restart') {
-        stateRef.current = createState(levelDataRef.current, localCharactersRef.current, isTestingRef.current);
+        stateRef.current = createState(levelDataRef.current, localCharactersRef.current, isTestingRef.current || isLocalCoop);
         hasPublishedComplete.current = false;
         hasPublishedRestart.current = false;
         keysRef.current = {};
@@ -201,7 +201,7 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
           }
 
           if (state.time - state.restartTime > 0.6) {
-            stateRef.current = createState(levelDataRef.current, localCharactersRef.current, isTestingRef.current);
+            stateRef.current = createState(levelDataRef.current, localCharactersRef.current, isTestingRef.current || isLocalCoop);
             hasPublishedComplete.current = false;
             hasPublishedRestart.current = false; 
             keysRef.current = {}; 
@@ -292,7 +292,7 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
   const handleRestartLevel = () => {
     if (!stateRef.current) return;
     if (gameEventActionRef.current) gameEventActionRef.current.send({ type: 'manual-restart' });
-    stateRef.current = createState(levelDataRef.current, localCharactersRef.current, isTestingRef.current);
+    stateRef.current = createState(levelDataRef.current, localCharactersRef.current, isTestingRef.current || isLocalCoop);
     hasPublishedComplete.current = false;
     hasPublishedRestart.current = false;
     lastPublishedTime.current = 0;

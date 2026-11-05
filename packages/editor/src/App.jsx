@@ -20,6 +20,7 @@ const LIBRARY = [
     { id: 'platformPink', label: 'Sabit Pembe', icon: '🟪', tool: 'platformPink' },
   ]},
   { section: 'MANTIK & ÖZEL', items: [
+    { id: 'seesaw', label: 'Denge Platformu', icon: '⚖️', tool: 'seesaw' }, // ✅ YENİ
     { id: 'laser', label: 'Lazer', icon: '⚡', tool: 'laser' }, // ✅ YENİ
 	{ id: 'lever', label: 'Kol', icon: '🎚️', tool: 'lever' }, // ✅ YENİ
     { id: 'leverTarget', label: 'Kol Hedefi', icon: '🎯', tool: 'leverTarget' }, // ✅ YENİ
@@ -450,6 +451,24 @@ export default function App() {
       setLevelData({ ...levelData, platforms: newPlatforms }); return;
     }
 	
+    // ✅ YENİ: Denge platformu (tahta + orta pivot)
+    if (selectedTool === 'seesaw') {
+      const newPlatform = {
+        x, y, w: 220, h: Math.max(16, gridSize),
+        brackets: true,
+        color: 'platformNeutral',
+        isSeesaw: true,
+        angle: 0,
+        maxAngle: 0.35,
+        mass: 6,
+        damping: 3,
+      };
+      const newPlatforms = [...levelData.platforms, newPlatform];
+      setLevelData({ ...levelData, platforms: newPlatforms });
+      setSelectedIndices([newPlatforms.length - 1]);
+      return;
+    }
+
     if (selectedTool === 'box' || selectedTool === 'key' || selectedTool === 'door') {
        let w = 40, h = 40;
        if (selectedTool === 'door') h = 80;
@@ -940,7 +959,7 @@ export default function App() {
                 onTouchEnd={onPointerUp}
                 style={{ 
                   border: '2px solid #2a2a40', borderRadius: 4, boxShadow: '0 10px 40px rgba(0,0,0,0.8)', 
-                  cursor: isPanning ? 'grabbing' : (['platform','wall','platformBlue','platformPink','platformTimer','platformRemote','buttonBlue','buttonPink','platformMoving','hazard','collectible','trampoline','box','key','door','lever','leverTarget','laser'].includes(selectedTool) ? 'crosshair' : (selectedTool === 'delete' ? 'not-allowed' : 'grab')),
+                  cursor: isPanning ? 'grabbing' : (['platform','wall','platformBlue','platformPink','platformTimer','platformRemote','buttonBlue','buttonPink','platformMoving','hazard','collectible','trampoline','box','key','door','lever','leverTarget','laser','seesaw'].includes(selectedTool) ? 'crosshair' : (selectedTool === 'delete' ? 'not-allowed' : 'grab')),
                   maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', aspectRatio: `${WIDTH}/${HEIGHT}`
                 }} 
               />
@@ -1003,6 +1022,52 @@ export default function App() {
               <div className="toggle-row"><span>Duvar (Yanlardan Çarpılır)</span><Toggle checked={selectedPlatform?.isWall || false} onChange={v => updateSelectedPlatform('isWall', v)} label="Duvar modu"/></div>
               <div className="toggle-row"><span>Kırılabilir mi?</span><Toggle checked={selectedPlatform?.isBreakable || false} onChange={v => updateSelectedPlatform('isBreakable', v)} label="Kırılabilir platform"/></div>
             
+              {selectedPlatform?.isSeesaw && (
+                <div style={{ marginTop: 15, padding: 10, background: '#13241f', borderRadius: 6, border: '1px solid #2da56e' }}>
+                  <h4 style={{ margin: '0 0 10px', color: '#7ce0b0', fontSize: 13 }}>⚖️ Denge Platformu</h4>
+
+                  <label style={{ fontSize: 11, color: '#ccc', display: 'block' }}>
+                    Maksimum Açı: {Math.round((selectedPlatform.maxAngle ?? 0.35) * 180 / Math.PI)}°
+                  </label>
+                  <input
+                    type="range" min="5" max="40" step="1"
+                    value={Math.round((selectedPlatform.maxAngle ?? 0.35) * 180 / Math.PI)}
+                    onChange={e => updateSelectedPlatform('maxAngle', Number(e.target.value) * Math.PI / 180)}
+                    style={{ width: '100%' }}
+                  />
+
+                  <label style={{ fontSize: 11, color: '#ccc', display: 'block', marginTop: 8 }}>
+                    Tahta Ağırlığı: {selectedPlatform.mass ?? 6}
+                  </label>
+                  <input
+                    type="range" min="2" max="20" step="1"
+                    value={selectedPlatform.mass ?? 6}
+                    onChange={e => updateSelectedPlatform('mass', Number(e.target.value))}
+                    style={{ width: '100%' }}
+                  />
+
+                  <label style={{ fontSize: 11, color: '#ccc', display: 'block', marginTop: 8 }}>
+                    Sönümleme: {selectedPlatform.damping ?? 3}
+                  </label>
+                  <input
+                    type="range" min="0" max="10" step="0.5"
+                    value={selectedPlatform.damping ?? 3}
+                    onChange={e => updateSelectedPlatform('damping', Number(e.target.value))}
+                    style={{ width: '100%' }}
+                  />
+
+                  <div className="toggle-row" style={{ marginTop: 8 }}>
+                    <span>Eğimde kaydırsın mı?</span>
+                    <Toggle checked={selectedPlatform.slide !== false} onChange={v => updateSelectedPlatform('slide', v)} label="Eğimde kayma"/>
+                  </div>
+
+                  <p style={{ fontSize: 11, color: '#888', marginTop: 8, marginBottom: 0 }}>
+                    Destek noktası her zaman tahtanın ortasındadır. İki oyuncu eşit ağırlıkta olduğu için
+                    sonucu pivot uzaklığı belirler; ağır taraf aşağı iner.
+                  </p>
+                </div>
+              )}
+
               {selectedPlatform && (selectedPlatform.isLever || selectedPlatform.isLeverTarget) && (
                 <div style={{ marginTop: 15, padding: 10, background: '#13131f', borderRadius: 6, border: '1px solid #2a2a40' }}>
                   <h4 style={{ margin: '0 0 10px', color: '#f1c40f', fontSize: 13 }}>🎨 Renk Seçimi</h4>

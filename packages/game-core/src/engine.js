@@ -1,5 +1,6 @@
 import { GRAVITY, WIDTH, HEIGHT } from './constants.js';
 import { playSound } from './sound.js';
+import { DEFAULT_SEESAW, isOverSeesaw, seesawSurfaceY, stepSeesaw } from './surface.js';
 
 export function createState(levelData, characters = { p1: 'platformBlue', p2: 'platformPink' }, forceP2Active = false) {
   return {
@@ -22,6 +23,14 @@ export function createState(levelData, characters = { p1: 'platformBlue', p2: 'p
       isBroken: false,
       isOpen: false,
       isCollected: false,
+      // ✅ YENİ: Denge platformu (seesaw) — pivot her zaman tahtanın ortası
+      isSeesaw: !!p.isSeesaw,
+      angle: p.angle || DEFAULT_SEESAW.angle,
+      angularVelocity: 0,
+      maxAngle: p.maxAngle !== undefined ? p.maxAngle : DEFAULT_SEESAW.maxAngle,
+      mass: p.mass !== undefined ? p.mass : DEFAULT_SEESAW.mass,
+      damping: p.damping !== undefined ? p.damping : DEFAULT_SEESAW.damping,
+      stiffness: p.stiffness || DEFAULT_SEESAW.stiffness,
       // ✅ YENİ: Kutu için fizik değişkenleri
       vx: 0, vy: 0, grounded: false, boxGrounded: false ,
 	  leverTilt: 0, // ✅ YENİ: Kol eğim açısı (-1 ile +1 arası)
@@ -83,6 +92,9 @@ function isSolid(playerColor, plat) {
   
   // ✅ YENİ: Kol ve hedefi her zaman katıdır (içinden geçilmez)
   if (plat.isLever || plat.isLeverTarget) return true;
+
+  // ✅ YENİ: Denge platformu AABB katı değildir; eğik yüzey olarak ayrı ele alınır
+  if (plat.isSeesaw) return false;
   if (plat.isRemote) {
     if (!plat.isActive) return false;
     if (plat.color === 'platformNeutral') return true; 
@@ -267,6 +279,35 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
         const wasOnTop = Math.abs((p.y + p.h) - prevY) < 8 && p.x + p.w > prevX && p.x < prevX + plat.w;
         if (wasOnTop && !plat.isLaser) { p.x += deltaX; p.y += deltaY; } // ✅ Lazerse taşıma
       }
+    }
+  }
+
+  // ✅ YENİ: DENGE PLATFORMU (SEESAW) — tork tabanlı tek serbestlik derecesi
+  for (const plat of state.platforms) {
+    if (!plat.isSeesaw || plat.isBroken) continue;
+
+    const riders = [];
+    for (const p of state.players) {
+      const cx = p.x + p.w / 2;
+      if (!isOverSeesaw(plat, cx)) continue;
+      const ySurf = seesawSurfaceY(plat, cx);
+      // Ayakları yüzeye yakın olan oyuncu ağırlık uygular.
+      // Zıplayan (yukarı çıkan) oyuncu tahtayı itmez; tahtanın altındaki oyuncu sayılmaz.
+      if (p.vy >= 0 && Math.abs((p.y + p.h) - ySurf) < 18) {
+        riders.push({ player: p, x: cx, weight: 1 });
+      }
+    }
+
+    stepSeesaw(plat, riders, dt, GRAVITY);
+
+    // Dönen yüzeyle birlikte binicileri taşı (mutlak konumlandırma).
+    for (const r of riders) {
+      const p = r.player;
+      const ySurf = seesawSurfaceY(plat, p.x + p.w / 2);
+      p.y = ySurf - p.h;
+      p.vy = 0;
+      p.grounded = true;
+      plat.isTouched = true;
     }
   }
 
@@ -469,6 +510,29 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
         }
       }
       
+      // ✅ YENİ: DENGE PLATFORMU YÜZEYİNE İNİŞ (tek yönlü, eğik yüzey)
+      if (plat.isSeesaw) {
+        const cx = p.x + p.w / 2;
+        const prevCx = cx - p.vx * dt;
+        if (isOverSeesaw(plat, cx)) {
+          const ySurfNow = seesawSurfaceY(plat, cx);
+          const ySurfPrev = seesawSurfaceY(plat, prevCx);
+          const prevBottom = prevY + p.h;
+          const bottom = p.y + p.h;
+          if (p.vy >= 0 && prevBottom <= ySurfPrev + 8 && bottom >= ySurfNow) {
+            p.y = ySurfNow - p.h;
+            p.vy = 0;
+            p.grounded = true;
+            plat.isTouched = true;
+            // Eğimde kayma (platform bazında kapatılabilir: slide: false)
+            if (plat.slide !== false) {
+              p.vx += Math.sin(plat.angle || 0) * GRAVITY * 0.2 * dt;
+            }
+          }
+        }
+        continue;
+      }
+
       if (!plat.isButtonBlue && !plat.isButtonPink && !plat.isHazard && !plat.isKey && !plat.isBroken && isSolid(p.color, plat) && checkCollision(p, plat)) {
         // Trambolin
         if (plat.isTrampoline && p.vy > 0 && prevY + p.h <= plat.y + 10) {
