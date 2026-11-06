@@ -6,6 +6,57 @@ const bgImg = new Image();
 
 const imageCache = {};
 
+// ✅ YENİ: Görsel (sprite) yardımcıları
+function getCachedImage(src) {
+  if (!src) return null;
+  if (!imageCache[src]) {
+    const img = new Image();
+    img.src = src;
+    imageCache[src] = img;
+  }
+  return imageCache[src];
+}
+
+function isImageReady(img) {
+  if (!img) return false;
+  if (!img.complete) return false;
+  // Bozuk/çözülemeyen görsellerde naturalWidth 0 olur.
+  return img.naturalWidth === undefined || img.naturalWidth > 0;
+}
+
+/**
+ * Bir nesnenin sprite'ını kendi kutusuna çizer.
+ * Dönen çarklar için açı, düşmanlar için yön (flip) uygulanır.
+ * Çizildiyse true döner.
+ */
+function drawPlatformSprite(ctx, plat, state) {
+  const src = (plat.isTouched && plat.spriteTouched) ? plat.spriteTouched : plat.sprite;
+  if (!src) return false;
+
+  // Renk değişiminde beyaz flaş gösterilsin diye sprite'ı atla.
+  if (plat.flashUntil && state.time < plat.flashUntil) return false;
+
+  const img = getCachedImage(src);
+  if (!isImageReady(img)) return false;
+
+  const cx = plat.x + plat.w / 2;
+  const cy = plat.y + plat.h / 2;
+  const rotation = plat.isWheel
+    ? (plat.wheelAngle !== undefined
+        ? plat.wheelAngle
+        : (state.time || 0) * (plat.spinSpeed ?? 2.5))
+    : 0;
+  const flip = plat.isEnemy && plat.patrolDir === -1 ? -1 : 1;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (rotation) ctx.rotate(rotation);
+  if (flip === -1) ctx.scale(-1, 1);
+  ctx.drawImage(img, -plat.w / 2, -plat.h / 2, plat.w, plat.h);
+  ctx.restore();
+  return true;
+}
+
 export function clearImageCache() {
   Object.keys(imageCache).forEach(k => delete imageCache[k]);
 }
@@ -71,6 +122,11 @@ export function drawPlatforms(ctx, state) {
     if (plat.isCollectible && plat.collected) continue; // Toplananları çizme	
 	// ✅ YENİ: Kırılan platformu çizme
     if (plat.isBroken) continue; 
+
+    // ✅ YENİ: Sprite desteği — görseli olan HER nesne (platform, çark, düşman,
+    // tehlike, anahtar, kapı...) prosedürel çizim yerine kendi görseliyle çizilir.
+    // Seesaw dönen yüzey olduğu için ayrı ele alınır.
+    if (!plat.isSeesaw && drawPlatformSprite(ctx, plat, state)) continue;
 	
 	    // ✅ YENİ: DENGE PLATFORMU (SEESAW) ÇİZİMİ
     if (plat.isSeesaw) {
@@ -379,6 +435,155 @@ export function drawPlatforms(ctx, state) {
       continue;
     }
 	
+	// ✅ YENİ: Çarklı Engel (dönen testere)
+    if (plat.isWheel) {
+      ctx.save();
+      const cx = plat.x + plat.w / 2;
+      const cy = plat.y + plat.h / 2;
+      const r = Math.min(plat.w, plat.h) / 2;
+      // Oyun state'inde wheelAngle motor tarafından güncellenir; editörde
+      // (ham level verisi) animasyon için state.time kullanılır.
+      const angle = plat.wheelAngle !== undefined
+        ? plat.wheelAngle
+        : (state.time || 0) * (plat.spinSpeed ?? 2.5);
+
+      // Zemin gölgesi
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + r * 0.9, r * 0.9, r * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+
+      // Dış testere dişleri
+      ctx.shadowColor = '#e74c3c';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = '#c0392b';
+      const spikes = 12;
+      for (let i = 0; i < spikes; i++) {
+        const a = (i / spikes) * Math.PI * 2;
+        ctx.save();
+        ctx.rotate(a);
+        ctx.beginPath();
+        ctx.moveTo(r * 0.7, -r * 0.13);
+        ctx.lineTo(r, 0);
+        ctx.lineTo(r * 0.7, r * 0.13);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Metal gövde
+      ctx.shadowBlur = 0;
+      const wheelGrad = ctx.createRadialGradient(-r * 0.25, -r * 0.25, r * 0.1, 0, 0, r * 0.78);
+      wheelGrad.addColorStop(0, '#95a5a6');
+      wheelGrad.addColorStop(0.6, '#5d6d7e');
+      wheelGrad.addColorStop(1, '#2c3e50');
+      ctx.fillStyle = wheelGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.72, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = Math.max(2, r * 0.07);
+      ctx.strokeStyle = '#e74c3c';
+      ctx.stroke();
+
+      // Kollar
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = Math.max(2, r * 0.06);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * r * 0.6, Math.sin(a) * r * 0.6);
+        ctx.stroke();
+      }
+
+      // Göbek
+      ctx.fillStyle = '#e74c3c';
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.max(3, r * 0.2), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(-r * 0.06, -r * 0.06, Math.max(1.5, r * 0.07), 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+      continue;
+    }
+
+    // ✅ YENİ: Devriye Düşman
+    if (plat.isEnemy) {
+      ctx.save();
+      const cx = plat.x + plat.w / 2;
+      const cy = plat.y + plat.h / 2;
+      const dir = plat.patrolDir === -1 ? -1 : 1;
+      const bob = Math.sin(state.time * 8 + plat.x * 0.05) * Math.max(1, plat.h * 0.06);
+
+      // Gölge
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + plat.h / 2 + 3, plat.w * 0.4, plat.h * 0.12, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.translate(cx, cy + bob);
+
+      // Gövde
+      const bodyGrad = ctx.createLinearGradient(0, -plat.h / 2, 0, plat.h / 2);
+      bodyGrad.addColorStop(0, '#c084fc');
+      bodyGrad.addColorStop(1, '#7e22ce');
+      ctx.fillStyle = bodyGrad;
+      ctx.beginPath();
+      ctx.roundRect(-plat.w / 2, -plat.h / 2, plat.w, plat.h, Math.min(plat.w, plat.h) * 0.35);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(40, 10, 60, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(-plat.w / 2, -plat.h / 2, plat.w, plat.h, Math.min(plat.w, plat.h) * 0.35);
+      ctx.stroke();
+
+      // Dikenler (üst)
+      ctx.fillStyle = '#7e22ce';
+      const spikeCount = Math.max(2, Math.floor(plat.w / 12));
+      for (let i = 0; i < spikeCount; i++) {
+        const sx = -plat.w / 2 + (i + 0.5) * (plat.w / spikeCount);
+        ctx.beginPath();
+        ctx.moveTo(sx - 4, -plat.h / 2 + 2);
+        ctx.lineTo(sx, -plat.h / 2 - Math.max(4, plat.h * 0.18));
+        ctx.lineTo(sx + 4, -plat.h / 2 + 2);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Gözler (yönüne bakar)
+      const eyeR = Math.max(2.5, Math.min(plat.w, plat.h) * 0.12);
+      const eyeY = -plat.h * 0.08;
+      const eyeGap = plat.w * 0.18;
+      for (const sign of [-1, 1]) {
+        const ex = sign * eyeGap;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(ex, eyeY, eyeR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#1b0b2e';
+        ctx.beginPath();
+        ctx.arc(ex + dir * eyeR * 0.35, eyeY, eyeR * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Ağız
+      ctx.strokeStyle = '#1b0b2e';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, plat.h * 0.2, plat.w * 0.16, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+
+      ctx.restore();
+      continue;
+    }
+
 	// ✅ YENİ: Tehlikeler (Diken / Lava)
     if (plat.isHazard) {
       ctx.save();
@@ -509,12 +714,10 @@ export function drawPlatforms(ctx, state) {
 
     let activeSprite = (plat.isTouched && plat.spriteTouched) ? plat.spriteTouched : plat.sprite;
 
+    // Not: Sprite desteği drawPlatforms başında genel olarak ele alınır.
     if (activeSprite && !isFlashing) {
-      if (!imageCache[activeSprite]) {
-        const img = new Image(); img.src = activeSprite; imageCache[activeSprite] = img;
-      }
-      const img = imageCache[activeSprite];
-      if (img.complete) {
+      const img = getCachedImage(activeSprite);
+      if (isImageReady(img)) {
         ctx.drawImage(img, plat.x, plat.y, plat.w, plat.h);
         if (plat.isMoving) ctx.restore();
         continue; 
@@ -569,6 +772,16 @@ export function drawGoal(ctx, state) {
   rad.addColorStop(0, `rgba(255, 71, 87, ${0.4 + pulse * 0.2})`);
   rad.addColorStop(1, 'rgba(255, 71, 87, 0)');
   ctx.fillStyle = rad; ctx.fillRect(cx - 200, cy - 200, 400, 400);
+
+  // ✅ YENİ: Hedef için de sprite desteği
+  if (goal.sprite) {
+    const img = getCachedImage(goal.sprite);
+    if (isImageReady(img)) {
+      ctx.drawImage(img, goal.x, goal.y, goal.w, goal.h);
+      return;
+    }
+  }
+
   ctx.fillStyle = state.levelComplete ? '#4caf50' : COLORS.goalGlow;
   ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
   ctx.fillStyle = '#333';

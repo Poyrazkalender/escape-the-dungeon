@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test/seesaw.test.mjs"
+    "test": "node test/seesaw.test.mjs && node test/obstacles.test.mjs && node test/sprite.test.mjs"
   },
   "main": "./src/index.js",
   "exports": {

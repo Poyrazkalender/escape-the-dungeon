@@ -21,6 +21,8 @@ const LIBRARY = [
   ]},
   { section: 'MANTIK & ÖZEL', items: [
     { id: 'seesaw', label: 'Denge Platformu', icon: '⚖️', tool: 'seesaw' }, // ✅ YENİ
+    { id: 'wheel', label: 'Çarklı Engel', icon: '⚙️', tool: 'wheel' }, // ✅ YENİ
+    { id: 'enemy', label: 'Devriye Düşman', icon: '👾', tool: 'enemy' }, // ✅ YENİ
     { id: 'laser', label: 'Lazer', icon: '⚡', tool: 'laser' }, // ✅ YENİ
 	{ id: 'lever', label: 'Kol', icon: '🎚️', tool: 'lever' }, // ✅ YENİ
     { id: 'leverTarget', label: 'Kol Hedefi', icon: '🎯', tool: 'leverTarget' }, // ✅ YENİ
@@ -516,7 +518,7 @@ export default function App() {
       return;
     }
 
-    if (['platform', 'wall', 'platformBlue', 'platformPink', 'platformTimer', 'platformRemote', 'buttonBlue', 'buttonPink', 'platformMoving', 'hazard', 'collectible', 'trampoline', 'laser'].includes(selectedTool)) {
+    if (['platform', 'wall', 'platformBlue', 'platformPink', 'platformTimer', 'platformRemote', 'buttonBlue', 'buttonPink', 'platformMoving', 'hazard', 'collectible', 'trampoline', 'laser', 'wheel', 'enemy'].includes(selectedTool)) {
       setDrawStart({ x, y }); setDrawCurrent({ x, y });
     }
   };
@@ -648,6 +650,10 @@ export default function App() {
         setDrawCurrent({ x: drawStart.x + 40, y: drawStart.y + 40 });
       } else if (selectedTool === 'laser') {
         setDrawCurrent({ x: drawStart.x + 100, y: drawStart.y + 20 });
+      } else if (selectedTool === 'wheel') {
+        setDrawCurrent({ x: drawStart.x + 80, y: drawStart.y + 80 });
+      } else if (selectedTool === 'enemy') {
+        setDrawCurrent({ x: drawStart.x + 40, y: drawStart.y + 40 });
       } else { setDrawStart(null); setDrawCurrent(null); return; }
     }
 
@@ -677,6 +683,13 @@ export default function App() {
       case 'door': newPlatform.isDoor = true; newPlatform.color = 'platformNeutral'; break;
       case 'laser': newPlatform.isLaser = true; newPlatform.isMoving = true; newPlatform.moveAxis = 'x'; newPlatform.moveSpeed = 2;
         newPlatform.moveRange = 150;
+        break;
+      case 'wheel': newPlatform.isWheel = true; newPlatform.color = 'platformNeutral'; newPlatform.brackets = false;
+        newPlatform.spinSpeed = 2.5; newPlatform.patrolAxis = 'x'; newPlatform.patrolRange = 0; newPlatform.patrolSpeed = 80;
+        newPlatform.sparkEnabled = true; newPlatform.sparkRate = 1;
+        break;
+      case 'enemy': newPlatform.isEnemy = true; newPlatform.brackets = false;
+        newPlatform.patrolAxis = 'x'; newPlatform.patrolRange = 120; newPlatform.patrolSpeed = 80;
         break;
     }
 
@@ -973,7 +986,7 @@ export default function App() {
                 onTouchEnd={onPointerUp}
                 style={{ 
                   border: '2px solid #2a2a40', borderRadius: 4, boxShadow: '0 10px 40px rgba(0,0,0,0.8)', 
-                  cursor: isPanning ? 'grabbing' : (['platform','wall','platformBlue','platformPink','platformTimer','platformRemote','buttonBlue','buttonPink','platformMoving','hazard','collectible','trampoline','box','key','door','lever','leverTarget','laser','seesaw'].includes(selectedTool) ? 'crosshair' : (selectedTool === 'delete' ? 'not-allowed' : 'grab')),
+                  cursor: isPanning ? 'grabbing' : (['platform','wall','platformBlue','platformPink','platformTimer','platformRemote','buttonBlue','buttonPink','platformMoving','hazard','collectible','trampoline','box','key','door','lever','leverTarget','laser','seesaw','wheel','enemy'].includes(selectedTool) ? 'crosshair' : (selectedTool === 'delete' ? 'not-allowed' : 'grab')),
                   maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', aspectRatio: `${WIDTH}/${HEIGHT}`
                 }} 
               />
@@ -1107,6 +1120,119 @@ export default function App() {
                   <p style={{ fontSize: 11, color: '#888', marginTop: 8, marginBottom: 0 }}>
                     Destek noktası her zaman tahtanın ortasındadır. İki oyuncu eşit ağırlıkta olduğu için
                     sonucu pivot uzaklığı belirler; ağır taraf aşağı iner.
+                  </p>
+                </div>
+              )}
+
+              {selectedPlatform?.isWheel && (
+                <div style={{ marginTop: 15, padding: 10, background: '#241a13', borderRadius: 6, border: '1px solid #c0392b' }}>
+                  <h4 style={{ margin: '0 0 10px', color: '#ff9b8a', fontSize: 13 }}>⚙️ Çarklı Engel</h4>
+
+                  <label style={{ fontSize: 11, color: '#ccc', display: 'block' }}>
+                    Dönüş Hızı: {(selectedPlatform.spinSpeed ?? 2.5).toFixed(1)}
+                  </label>
+                  <input type="range" min="0" max="8" step="0.5"
+                    value={selectedPlatform.spinSpeed ?? 2.5}
+                    onChange={e => updateSelectedPlatform('spinSpeed', Number(e.target.value))}
+                    style={{ width: '100%' }} />
+
+                  <div className="toggle-row" style={{ marginTop: 8 }}>
+                    <span>Hareket Etsin mi?</span>
+                    <Toggle
+                      checked={(selectedPlatform.patrolRange || 0) > 0}
+                      onChange={v => updateSelectedPlatform('patrolRange', v ? 120 : 0)}
+                      label="Çark hareketi" />
+                  </div>
+
+                  <div className="toggle-row" style={{ marginTop: 8 }}>
+                    <span>Kıvılcım Çıkarsın mı?</span>
+                    <Toggle
+                      checked={selectedPlatform.sparkEnabled !== false}
+                      onChange={v => updateSelectedPlatform('sparkEnabled', v)}
+                      label="Kıvılcım efekti" />
+                  </div>
+
+                  {selectedPlatform.sparkEnabled !== false && (
+                    <>
+                      <label style={{ fontSize: 11, color: '#ccc', display: 'block', marginTop: 8 }}>
+                        Kıvılcım Yoğunluğu: {(selectedPlatform.sparkRate ?? 1).toFixed(1)}
+                      </label>
+                      <input type="range" min="0.2" max="3" step="0.1"
+                        value={selectedPlatform.sparkRate ?? 1}
+                        onChange={e => updateSelectedPlatform('sparkRate', Number(e.target.value))}
+                        style={{ width: '100%' }} />
+                    </>
+                  )}
+
+                  {(selectedPlatform.patrolRange || 0) > 0 && (
+                    <>
+                      <div className="toggle-row" style={{ marginTop: 8 }}>
+                        <span>Eksen (X / Y)</span>
+                        <button
+                          onClick={() => updateSelectedPlatform('patrolAxis', selectedPlatform.patrolAxis === 'y' ? 'x' : 'y')}
+                          style={{ padding: '4px 10px', background: '#3498db', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold' }}
+                        >
+                          {selectedPlatform.patrolAxis === 'y' ? 'Dikey (Y)' : 'Yatay (X)'}
+                        </button>
+                      </div>
+
+                      <label style={{ fontSize: 11, color: '#ccc', display: 'block', marginTop: 8 }}>
+                        Mesafe: {Math.abs(selectedPlatform.patrolRange || 0)}px
+                      </label>
+                      <input type="range" min="20" max="400" step="10"
+                        value={Math.abs(selectedPlatform.patrolRange || 0)}
+                        onChange={e => updateSelectedPlatform('patrolRange', Number(e.target.value))}
+                        style={{ width: '100%' }} />
+
+                      <label style={{ fontSize: 11, color: '#ccc', display: 'block', marginTop: 8 }}>
+                        Hız: {selectedPlatform.patrolSpeed ?? 80} px/s
+                      </label>
+                      <input type="range" min="20" max="300" step="10"
+                        value={selectedPlatform.patrolSpeed ?? 80}
+                        onChange={e => updateSelectedPlatform('patrolSpeed', Number(e.target.value))}
+                        style={{ width: '100%' }} />
+                    </>
+                  )}
+
+                  <p style={{ fontSize: 11, color: '#888', marginTop: 8, marginBottom: 0 }}>
+                    Çark temas hâlinde oyuncuyu öldürür. Mesafe 0 ise yerinde döner.
+                  </p>
+                </div>
+              )}
+
+              {selectedPlatform?.isEnemy && (
+                <div style={{ marginTop: 15, padding: 10, background: '#1e1333', borderRadius: 6, border: '1px solid #a855f7' }}>
+                  <h4 style={{ margin: '0 0 10px', color: '#d8b4fe', fontSize: 13 }}>👾 Devriye Düşman</h4>
+
+                  <div className="toggle-row">
+                    <span>Eksen (X / Y)</span>
+                    <button
+                      onClick={() => updateSelectedPlatform('patrolAxis', selectedPlatform.patrolAxis === 'y' ? 'x' : 'y')}
+                      style={{ padding: '4px 10px', background: '#3498db', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 'bold' }}
+                    >
+                      {selectedPlatform.patrolAxis === 'y' ? 'Dikey (Y)' : 'Yatay (X)'}
+                    </button>
+                  </div>
+
+                  <label style={{ fontSize: 11, color: '#ccc', display: 'block', marginTop: 8 }}>
+                    Devriye Mesafesi: {Math.abs(selectedPlatform.patrolRange || 0)}px
+                  </label>
+                  <input type="range" min="20" max="500" step="10"
+                    value={Math.abs(selectedPlatform.patrolRange || 0)}
+                    onChange={e => updateSelectedPlatform('patrolRange', Number(e.target.value))}
+                    style={{ width: '100%' }} />
+
+                  <label style={{ fontSize: 11, color: '#ccc', display: 'block', marginTop: 8 }}>
+                    Hız: {selectedPlatform.patrolSpeed ?? 80} px/s
+                  </label>
+                  <input type="range" min="20" max="300" step="10"
+                    value={selectedPlatform.patrolSpeed ?? 80}
+                    onChange={e => updateSelectedPlatform('patrolSpeed', Number(e.target.value))}
+                    style={{ width: '100%' }} />
+
+                  <p style={{ fontSize: 11, color: '#888', marginTop: 8, marginBottom: 0 }}>
+                    Düşman başlangıç noktasından itibaren belirtilen mesafe kadar gidip döner.
+                    Dokunursanız seviye yeniden başlar.
                   </p>
                 </div>
               )}
@@ -1309,8 +1435,8 @@ export default function App() {
                           gap: 6
                         }}
                       >
-                        <span>{obj.isGoal ? '🚩' : obj.isTimer ? '⏱' : obj.isBox ? '📦' : obj.isLaser ? '⚡' : '🧱'}</span>
-                        <span style={{ flex: 1 }}>{obj.isGoal ? 'Hedef' : obj.isTimer ? 'Zamanlayıcı' : obj.isBox ? 'Kutu' : obj.isLaser ? 'Lazer' : 'Zemin'}</span>
+                        <span>{obj.isGoal ? '🚩' : obj.isWheel ? '⚙️' : obj.isEnemy ? '👾' : obj.isSeesaw ? '⚖️' : obj.isTimer ? '⏱' : obj.isBox ? '📦' : obj.isLaser ? '⚡' : '🧱'}</span>
+                        <span style={{ flex: 1 }}>{obj.isGoal ? 'Hedef' : obj.isWheel ? 'Çarklı Engel' : obj.isEnemy ? 'Devriye Düşman' : obj.isSeesaw ? 'Denge Platformu' : obj.isTimer ? 'Zamanlayıcı' : obj.isBox ? 'Kutu' : obj.isLaser ? 'Lazer' : 'Zemin'}</span>
                         <span style={{ color: '#888', fontSize: 10 }}>#{i}</span>
                       </button>
                     ))}
@@ -1320,7 +1446,7 @@ export default function App() {
               <h3>Seçili Varlık</h3>
               <div className="object-summary">
                 {selectedIndices.length === 1 ? (
-                  <><span className="summary-icon">{selectedPlatform.isHazard ? '🔺' : selectedPlatform.isCollectible ? '💎' : selectedPlatform.isMoving ? '↔️' : '🧱'}</span><span><b>{selectedPlatform.isHazard ? 'Tehlike' : selectedPlatform.isCollectible ? 'Toplanabilir' : selectedPlatform.isMoving ? 'Hareketli Zemin' : 'Platform'}</b><small>{Math.round(selectedPlatform.w)} × {Math.round(selectedPlatform.h)} px</small></span></>
+                  <><span className="summary-icon">{selectedPlatform.isWheel ? '⚙️' : selectedPlatform.isEnemy ? '👾' : selectedPlatform.isHazard ? '🔺' : selectedPlatform.isCollectible ? '💎' : selectedPlatform.isMoving ? '↔️' : '🧱'}</span><span><b>{selectedPlatform.isWheel ? 'Çarklı Engel' : selectedPlatform.isEnemy ? 'Devriye Düşman' : selectedPlatform.isHazard ? 'Tehlike' : selectedPlatform.isCollectible ? 'Toplanabilir' : selectedPlatform.isMoving ? 'Hareketli Zemin' : 'Platform'}</b><small>{Math.round(selectedPlatform.w)} × {Math.round(selectedPlatform.h)} px</small></span></>
                 ) : selectedIndices.length > 1 ? (
                   <><span className="summary-icon">📚</span><span><b>{selectedIndices.length} Nesne</b><small>Toplu seçim yapıldı</small></span></>
                 ) : (

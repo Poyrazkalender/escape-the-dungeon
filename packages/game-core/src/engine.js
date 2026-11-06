@@ -31,6 +31,16 @@ export function createState(levelData, characters = { p1: 'platformBlue', p2: 'p
       mass: p.mass !== undefined ? p.mass : DEFAULT_SEESAW.mass,
       damping: p.damping !== undefined ? p.damping : DEFAULT_SEESAW.damping,
       stiffness: p.stiffness || DEFAULT_SEESAW.stiffness,
+      // ✅ YENİ: Çarklı engel (dönen testere)
+      wheelAngle: p.wheelAngle || 0,
+      wheelSpinDir: 1,
+      spinSpeed: p.spinSpeed !== undefined ? p.spinSpeed : 2.5,
+      sparkEnabled: p.sparkEnabled !== false,
+      sparkRate: p.sparkRate !== undefined ? p.sparkRate : 1,
+      // ✅ YENİ: Devriye (çark ve düşman için ortak)
+      patrolOriginX: p.x,
+      patrolOriginY: p.y,
+      patrolDir: p.patrolDir === -1 ? -1 : 1,
       // ✅ YENİ: Kutu için fizik değişkenleri
       vx: 0, vy: 0, grounded: false, boxGrounded: false ,
 	  leverTilt: 0, // ✅ YENİ: Kol eğim açısı (-1 ile +1 arası)
@@ -84,11 +94,47 @@ function checkCollision(p, plat) {
   );
 }
 
+// ✅ YENİ: Dairesel çarpışma (çarklı engel için)
+function circleHitsRect(cx, cy, radius, p) {
+  const nearestX = Math.max(p.x, Math.min(cx, p.x + p.w));
+  const nearestY = Math.max(p.y, Math.min(cy, p.y + p.h));
+  const dx = cx - nearestX;
+  const dy = cy - nearestY;
+  return dx * dx + dy * dy <= radius * radius;
+}
+
+// ✅ YENİ: Ayarlanabilir mesafede ileri-geri devriye (çark ve düşman için ortak)
+function stepPatrol(plat, dt) {
+  const axis = plat.patrolAxis === 'y' ? 'y' : 'x';
+  const range = Math.abs(plat.patrolRange || 0);
+  if (range <= 0) return;
+
+  const speed = Math.abs(plat.patrolSpeed || 80);
+  const origin = axis === 'y'
+    ? (plat.patrolOriginY ?? plat.initialY ?? plat.y)
+    : (plat.patrolOriginX ?? plat.initialX ?? plat.x);
+  const min = Math.min(origin, origin + range);
+  const max = Math.max(origin, origin + range);
+
+  let pos = axis === 'y' ? plat.y : plat.x;
+  let dir = plat.patrolDir === -1 ? -1 : 1;
+
+  pos += dir * speed * dt;
+  if (pos >= max) { pos = max; dir = -1; }
+  else if (pos <= min) { pos = min; dir = 1; }
+
+  plat.patrolDir = dir;
+  if (axis === 'y') plat.y = pos; else plat.x = pos;
+}
+
 function isSolid(playerColor, plat) {
   if (plat.isDoor && plat.isOpen) return false;
   
   // ✅ YENİ: Lazer içinden geçilebilir (sadece öldürür)
   if (plat.isLaser) return false;
+
+  // ✅ YENİ: Çark ve düşman katı değildir; sadece temas hâlinde öldürür
+  if (plat.isWheel || plat.isEnemy) return false;
   
   // ✅ YENİ: Kol ve hedefi her zaman katıdır (içinden geçilmez)
   if (plat.isLever || plat.isLeverTarget) return true;
@@ -176,7 +222,7 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
 
     // Kutu ile zemin çarpışması
     for (const ground of state.platforms) {
-      if (ground === plat || ground.isBox || ground.isKey || ground.isGoal || ground.isHazard) continue;
+      if (ground === plat || ground.isBox || ground.isKey || ground.isGoal || ground.isHazard || ground.isWheel || ground.isEnemy) continue;
       if (isSolid('platformNeutral', ground) && checkCollision(plat, ground)) {
         if (plat.vy > 0) {
           plat.y = ground.y - plat.h;
@@ -259,7 +305,7 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
     }
 
     for (const ground of state.platforms) {
-      if (ground === plat || ground.isBox || ground.isKey || ground.isGoal || ground.isHazard) continue;
+      if (ground === plat || ground.isBox || ground.isKey || ground.isGoal || ground.isHazard || ground.isWheel || ground.isEnemy) continue;
       if (isSolid('platformNeutral', ground) && checkCollision(plat, ground)) {
         if (plat.vx > 0) plat.x = ground.x - plat.w;
         else if (plat.vx < 0) plat.x = ground.x + ground.w;
@@ -279,6 +325,59 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
       for (const p of state.players) {
         const wasOnTop = Math.abs((p.y + p.h) - prevY) < 8 && p.x + p.w > prevX && p.x < prevX + plat.w;
         if (wasOnTop && !plat.isLaser) { p.x += deltaX; p.y += deltaY; } // ✅ Lazerse taşıma
+      }
+    }
+  }
+
+  // ✅ YENİ: ÇARKLI ENGELLER (dönen testere) VE DEVRİYE DÜŞMANLARI
+  for (const plat of state.platforms) {
+    if (plat.isBroken) continue;
+    if (!plat.isWheel && !plat.isEnemy) continue;
+
+    const prevX = plat.x;
+    const prevY = plat.y;
+
+    // Ayarlanabilir devriye mesafesi (0 ise olduğu yerde durur)
+    stepPatrol(plat, dt);
+
+    if (plat.isWheel) {
+      const spin = Math.abs(plat.spinSpeed !== undefined ? plat.spinSpeed : 2.5);
+      const dx = plat.x - prevX;
+      const dy = plat.y - prevY;
+
+      // ✅ DÜZELTİLDİ: Dönüş yönü gittiği yöne göre belirlenir.
+      // Sağa giderken saat yönü (+), sola giderken saat yönünün tersi (-).
+      // Uçta bir an durduğunda son yön korunur; hiç hareket etmemişse saat yönü.
+      let spinDir = plat.wheelSpinDir === -1 ? -1 : 1;
+      if (Math.abs(dx) > 0.0001) spinDir = Math.sign(dx);
+      else if (Math.abs(dy) > 0.0001) spinDir = -Math.sign(dy); // yukarı → saat yönü tersi
+
+      plat.wheelSpinDir = spinDir;
+      plat.wheelAngle = (plat.wheelAngle || 0) + spin * spinDir * dt;
+
+      // ✅ YENİ: Dönerken kıvılcım efekti
+      if (plat.sparkEnabled !== false) {
+        const moving = Math.abs(dx) > 0.0001 || Math.abs(dy) > 0.0001;
+        const rate = (plat.sparkRate !== undefined ? plat.sparkRate : 1) * (moving ? 0.85 : 0.3);
+        if (spin > 0.05 && Math.random() < rate) {
+          const r = Math.min(plat.w, plat.h) / 2;
+          const cx = plat.x + plat.w / 2;
+          const cy = plat.y + plat.h / 2;
+          const a = Math.random() * Math.PI * 2;
+          const tangential = a + (Math.PI / 2) * spinDir;
+          const speed = 70 + Math.random() * 130;
+
+          state.particles.push({
+            x: cx + Math.cos(a) * r * 0.94,
+            y: cy + Math.sin(a) * r * 0.94,
+            vx: Math.cos(tangential) * speed - (spinDir * 40),
+            vy: Math.sin(tangential) * speed - 55,
+            life: 0.22 + Math.random() * 0.28,
+            maxLife: 0.5,
+            size: 1.5 + Math.random() * 2.5,
+            color: Math.random() < 0.5 ? '#ffd166' : '#ff8c42',
+          });
+        }
       }
     }
   }
@@ -567,8 +666,17 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
         }
       }
 
-      if ((plat.isHazard || plat.isLaser) && checkCollision(p, plat)) {
-        
+      // ✅ YENİ: Çark (dairesel), düşman/dehşet/lazer (dikdörtgen) teması öldürür
+      let lethalHit = false;
+      if (plat.isWheel) {
+        const radius = Math.min(plat.w, plat.h) / 2;
+        lethalHit = circleHitsRect(plat.x + plat.w / 2, plat.y + plat.h / 2, radius * 0.92, p);
+      } else if (plat.isHazard || plat.isLaser || plat.isEnemy) {
+        lethalHit = checkCollision(p, plat);
+      }
+
+      if (lethalHit) {
+		
 		if (!state.restartRequested) playSound('die');
         state.restartRequested = true;
 		state.restartTime = state.time;

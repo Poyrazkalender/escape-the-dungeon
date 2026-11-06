@@ -7,8 +7,7 @@
  * çizim ve ağ senkronizasyonu için anlamlı kalır.
  */
 
-export const DEFAULT_SEESAW = {
-  angle: 0,
+export const DEFAULT_SEESAW = {  angle: 0,
   maxAngle: 0.35, // ~20 derece
   mass: 6,
   damping: 3,     // 1/s cinsinden açısal sönümleme
