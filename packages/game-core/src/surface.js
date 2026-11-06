@@ -13,6 +13,13 @@ export const DEFAULT_SEESAW = {
   mass: 6,
   damping: 3,     // 1/s cinsinden açısal sönümleme
   stiffness: 0,   // > 0 ise tahta dengeye geri döner (yay)
+
+  // ✅ YENİ: Sert iniş fırlatması
+  launchEnabled: true,
+  impactThreshold: 700, // Bu hızın (px/s) üzerindeki inişler şok üretir
+  launchStrength: 1,    // Fırlatma gücü çarpanı
+  impactMinArm: 15,     // İnişin pivot merkezine minimum uzaklığı (px)
+  launchMinArm: 25,     // Fırlatılacak oyuncunun pivot merkezine minimum uzaklığı (px)
 };
 
 export function getSeesawGeometry(plat) {
@@ -79,3 +86,51 @@ export function stepSeesaw(plat, riders, dt, gravity) {
   plat.angle = next;
   return next;
 }
+
+/**
+ * Sert iniş şoku ile karşı uçtaki biniciyi fırlatır.
+ *
+ * impact: { offset, speed } — offset = iniş yapan oyuncunun pivot merkezine
+ * göre işaretli uzaklığı (px), speed = iniş anındaki dikey hız (px/s).
+ *
+ * Dönen değer: { rider, vy, vx } veya null (fırlatma yok).
+ */
+export function computeSeesawLaunch(plat, riders, impact) {
+  if (!impact) return null;
+  if (plat.launchEnabled === false) return null;
+  if (plat.launchCooldown > 0) return null;
+
+  const threshold = plat.impactThreshold ?? DEFAULT_SEESAW.impactThreshold;
+  const strength = plat.launchStrength ?? DEFAULT_SEESAW.launchStrength;
+  const impactMinArm = plat.impactMinArm ?? DEFAULT_SEESAW.impactMinArm;
+  const launchMinArm = plat.launchMinArm ?? DEFAULT_SEESAW.launchMinArm;
+
+  if (!(impact.speed >= threshold)) return null;
+  if (Math.abs(impact.offset) < impactMinArm) return null;
+
+  const impactSide = Math.sign(impact.offset);
+  const pivotX = plat.x + plat.w / 2;
+  let best = null;
+
+  for (const rider of riders) {
+    const offset = rider.x - pivotX;
+    // Karşı uçta ve pivot merkezinden yeterince uzakta olmalı.
+    if (Math.sign(offset) === impactSide) continue;
+    if (Math.abs(offset) < launchMinArm) continue;
+    if (!best || Math.abs(offset) > Math.abs(best.offset)) {
+      best = { rider, offset };
+    }
+  }
+
+  if (!best) return null;
+
+  // İniş hızı arttıkça fırlatma da güçlenir; alt/üst sınırlarla kontrol edilir.
+  const power = Math.min(1200, Math.max(420, impact.speed * 0.85)) * strength;
+
+  return {
+    rider: best.rider,
+    vy: -power,
+    vx: Math.sign(best.offset) * 90 * strength,
+  };
+}
+

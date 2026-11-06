@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { WIDTH, HEIGHT, createState, update, updateRemotePlayer, renderWorld, renderEditor, clearImageCache } from 'game-core';
 import TouchControls from './TouchControls';
 import { joinRoom } from '@trystero-p2p/mqtt'; 
-import { LEVELS } from '../game/levels';
 
-export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P1', selectedTool, customColor, customSprite, customSpriteTouched, levelData, onLevelChange, isMobile, characters, roomId, isLocalCoop,  currentLevelIndex, setCurrentLevelIndex, onExit }) {
+export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P1', selectedTool, customColor, customSprite, customSpriteTouched, levelData, onLevelChange, isMobile, characters, roomId, isLocalCoop, levels, currentLevelIndex, setCurrentLevelIndex, onExit }) {
   const canvasRef = useRef(null);
   const stateRef = useRef(null);
   const keysRef = useRef({});
@@ -79,13 +78,19 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
       }
     }, 1500);
 
+    // ✅ DÜZELTİLDİ: Tek otorite (host) modeli.
+    // En erken katılan oyuncu host'tur; sadece host platform durumunu gönderir,
+    // misafir gelen durumu uygular. Böylece iki taraf birbirinin state'ini ezmez.
+    const isHost = (remoteJoinTime) => (joinTime.current || 0) < (remoteJoinTime || 0);
+
     syncAction.onMessage = (data) => {
       if (data.type === 'request') {
-        if (stateRef.current) {
+        if (stateRef.current && isHost(data.joinTime)) {
           syncAction.send({ type: 'response', platforms: stateRef.current.platforms, myColor: localCharactersRef.current.p1, joinTime: joinTime.current });
         }
       } else if (data.type === 'response') {
-        if (data.platforms && stateRef.current) {
+        // Sadece misafir host'un state'ini uygular; host kendi state'ini korur.
+        if (data.platforms && stateRef.current && !isHost(data.joinTime)) {
           stateRef.current.platforms = data.platforms;
         }
       }
@@ -150,7 +155,7 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
       roomRef.current = null;
       hasResolvedColor.current = false; 
     };
-  }, [roomId, isEditing, onExit, setCurrentLevelIndex]);
+  }, [roomId, isEditing, isLocalCoop, onExit, setCurrentLevelIndex]);
 
   useEffect(() => {
     if (isRemoteLevelChange.current) {
@@ -279,9 +284,9 @@ export default function GameCanvas({ isEditing, isTesting, controlledPlayer = 'P
   }, [isEditing, levelData, drawStart, drawCurrent, roomId, isLocalCoop]);
 
   const handleNextLevel = () => {
-    
     const nextIndex = currentLevelIndex + 1;
-    if (nextIndex < LEVELS.length) {
+    const totalLevels = levels ? levels.length : 0;
+    if (nextIndex < totalLevels) {
       if (roomId && levelActionRef.current) levelActionRef.current.send(nextIndex);
       setCurrentLevelIndex(nextIndex);
     } else {

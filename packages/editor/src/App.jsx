@@ -137,11 +137,22 @@ export default function App() {
   const levelData = editorState.live;
   const selectedPlatform = selectedIndices.length === 1 ? levelData.platforms[selectedIndices[0]] : null;
 
+  // ✅ DÜZELTİLDİ: Her fare hareketinde localStorage'a yazmak yerine,
+  // değişiklik durduktan 400ms sonra tek sefer kaydet. Ayrıca levels dizisi
+  // doğrudan mutate edilmiyor; yeni nesne üretiliyor.
   useEffect(() => {
-    const newLevels = [...levels];
-    newLevels[currentLevelIndex].data = levelData;
-    setLevels(newLevels);
-    localStorage.setItem('love-game-levels', JSON.stringify(newLevels));
+    const timer = setTimeout(() => {
+      setLevels(prev => {
+        const next = prev.map((lvl, i) => i === currentLevelIndex ? { ...lvl, data: levelData } : lvl);
+        try {
+          localStorage.setItem('love-game-levels', JSON.stringify(next));
+        } catch (e) {
+          console.error('Seviyeler kaydedilemedi (localStorage kotası aşılmış olabilir):', e);
+        }
+        return next;
+      });
+    }, 400);
+    return () => clearTimeout(timer);
   }, [levelData, currentLevelIndex]);
 
   useEffect(() => { if (!isDragging) levelRef.current = levelData; }, [levelData, isDragging]);
@@ -462,6 +473,9 @@ export default function App() {
         maxAngle: 0.35,
         mass: 6,
         damping: 3,
+        launchEnabled: true,
+        launchStrength: 1,
+        impactThreshold: 700,
       };
       const newPlatforms = [...levelData.platforms, newPlatform];
       setLevelData({ ...levelData, platforms: newPlatforms });
@@ -1060,6 +1074,35 @@ export default function App() {
                     <span>Eğimde kaydırsın mı?</span>
                     <Toggle checked={selectedPlatform.slide !== false} onChange={v => updateSelectedPlatform('slide', v)} label="Eğimde kayma"/>
                   </div>
+
+                  <div className="toggle-row" style={{ marginTop: 8 }}>
+                    <span>Sert inişte fırlatsın mı?</span>
+                    <Toggle checked={selectedPlatform.launchEnabled !== false} onChange={v => updateSelectedPlatform('launchEnabled', v)} label="Sert iniş fırlatması"/>
+                  </div>
+
+                  {selectedPlatform.launchEnabled !== false && (
+                    <>
+                      <label style={{ fontSize: 11, color: '#ccc', display: 'block', marginTop: 8 }}>
+                        Fırlatma Gücü: {(selectedPlatform.launchStrength ?? 1).toFixed(1)}x
+                      </label>
+                      <input
+                        type="range" min="0.4" max="2" step="0.1"
+                        value={selectedPlatform.launchStrength ?? 1}
+                        onChange={e => updateSelectedPlatform('launchStrength', Number(e.target.value))}
+                        style={{ width: '100%' }}
+                      />
+
+                      <label style={{ fontSize: 11, color: '#ccc', display: 'block', marginTop: 8 }}>
+                        İniş Eşiği: {selectedPlatform.impactThreshold ?? 700} px/s
+                      </label>
+                      <input
+                        type="range" min="400" max="1200" step="50"
+                        value={selectedPlatform.impactThreshold ?? 700}
+                        onChange={e => updateSelectedPlatform('impactThreshold', Number(e.target.value))}
+                        style={{ width: '100%' }}
+                      />
+                    </>
+                  )}
 
                   <p style={{ fontSize: 11, color: '#888', marginTop: 8, marginBottom: 0 }}>
                     Destek noktası her zaman tahtanın ortasındadır. İki oyuncu eşit ağırlıkta olduğu için

@@ -1,6 +1,6 @@
 import { GRAVITY, WIDTH, HEIGHT } from './constants.js';
 import { playSound } from './sound.js';
-import { DEFAULT_SEESAW, isOverSeesaw, seesawSurfaceY, stepSeesaw } from './surface.js';
+import { DEFAULT_SEESAW, isOverSeesaw, seesawSurfaceY, stepSeesaw, computeSeesawLaunch } from './surface.js';
 
 export function createState(levelData, characters = { p1: 'platformBlue', p2: 'platformPink' }, forceP2Active = false) {
   return {
@@ -197,6 +197,7 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
           p.y = plat.y - p.h;
           p.vy = 0;
           p.grounded = true;
+          p.landedAt = state.time;
         } else {
 			          // Yandan itme
           if (p.vx > 0 && p.x + p.w - plat.x < 20) {
@@ -286,6 +287,8 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
   for (const plat of state.platforms) {
     if (!plat.isSeesaw || plat.isBroken) continue;
 
+    plat.launchCooldown = Math.max(0, (plat.launchCooldown || 0) - dt);
+
     const riders = [];
     for (const p of state.players) {
       const cx = p.x + p.w / 2;
@@ -294,11 +297,51 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
       // Ayakları yüzeye yakın olan oyuncu ağırlık uygular.
       // Zıplayan (yukarı çıkan) oyuncu tahtayı itmez; tahtanın altındaki oyuncu sayılmaz.
       if (p.vy >= 0 && Math.abs((p.y + p.h) - ySurf) < 18) {
+        // ✅ YENİ: Yüzeye hızlı inen oyuncu, sabitleme sırasında "yutulmadan"
+        // önce şok kaydedilir. Böylece sert iniş bilgisi kaybolmaz.
+        const threshold = plat.impactThreshold ?? DEFAULT_SEESAW.impactThreshold;
+        if (p.vy >= threshold) {
+          const pivotX = plat.x + plat.w / 2;
+          plat.seesawImpact = { offset: cx - pivotX, speed: p.vy };
+        }
         riders.push({ player: p, x: cx, weight: 1 });
       }
     }
 
     stepSeesaw(plat, riders, dt, GRAVITY);
+
+    // ✅ YENİ: Sert iniş şoku → karşı uçtaki oyuncu havaya fırlar.
+    const impact = plat.seesawImpact;
+    plat.seesawImpact = null;
+    const launch = computeSeesawLaunch(plat, riders, impact);
+    if (launch) {
+      const p = launch.rider.player;
+      p.vy = launch.vy;
+      p.vx += launch.vx;
+      p.grounded = false;
+      p.jumpBufferTimer = 0;
+      plat.launchCooldown = 0.25;
+
+      // Fırlatılan oyuncuyu bu karedeki yüzey sabitlemesinden çıkar.
+      const idx = riders.indexOf(launch.rider);
+      if (idx !== -1) riders.splice(idx, 1);
+
+      if (!isTesting) playSound('bounce');
+      state.shakeTime = Math.max(state.shakeTime, 0.12);
+      state.shakeIntensity = Math.max(state.shakeIntensity, 5);
+      for (let i = 0; i < 12; i++) {
+        state.particles.push({
+          x: p.x + p.w / 2 + (Math.random() - 0.5) * 30,
+          y: p.y + p.h,
+          vx: (Math.random() - 0.5) * 260,
+          vy: -Math.random() * 180,
+          life: 0.35 + Math.random() * 0.2,
+          maxLife: 0.55,
+          size: 2 + Math.random() * 4,
+          color: 'rgba(255, 220, 150, 0.9)',
+        });
+      }
+    }
 
     // Dönen yüzeyle birlikte binicileri taşı (mutlak konumlandırma).
     for (const r of riders) {
@@ -307,6 +350,7 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
       p.y = ySurf - p.h;
       p.vy = 0;
       p.grounded = true;
+      p.landedAt = state.time;
       plat.isTouched = true;
     }
   }
@@ -352,18 +396,37 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
 
   if (isTesting) {
     otherPlayers.forEach(otherP => {
-      if (!otherP.grounded) {
-        otherP.vy += GRAVITY * dt;
-        const prevY = otherP.y;
-        otherP.y += otherP.vy * dt;
-        for (const plat of state.platforms) {
-          if (!plat.isButtonBlue && !plat.isButtonPink && !plat.isBroken && isSolid(otherP.color, plat) && checkCollision(otherP, plat)) {
-            if (plat.isWall) {
-               if (otherP.vy > 0 && prevY + otherP.h <= plat.y + 10) { otherP.y = plat.y - otherP.h; otherP.vy = 0; otherP.grounded = true; }
-            } else {
-               if (otherP.vy >= 0 && prevY + otherP.h <= plat.y + 5) { otherP.y = plat.y - otherP.h; otherP.vy = 0; otherP.grounded = true; }
+      // ✅ DÜZELTİLDİ: Her karede sıfırlanır. Aksi halde bir kez yere basan
+      // oyuncu, zemini kalksa/kırılsa bile havada asılı kalıyordu.
+      otherP.grounded = false;
+      otherP.vy += GRAVITY * dt;
+      const prevY = otherP.y;
+      otherP.y += otherP.vy * dt;
+
+      for (const plat of state.platforms) {
+        if (plat.isSeesaw) {
+          if (plat.isBroken) continue;
+          const cx = otherP.x + otherP.w / 2;
+          if (isOverSeesaw(plat, cx)) {
+            const ySurf = seesawSurfaceY(plat, cx);
+            if (otherP.vy >= 0 && prevY + otherP.h <= ySurf + 10 && otherP.y + otherP.h >= ySurf) {
+              otherP.y = ySurf - otherP.h;
+              otherP.vy = 0;
+              otherP.grounded = true;
+              otherP.landedAt = state.time;
             }
           }
+          continue;
+        }
+        if (plat.isButtonBlue || plat.isButtonPink || plat.isBroken) continue;
+        if (!isSolid(otherP.color, plat) || !checkCollision(otherP, plat)) continue;
+
+        if (plat.isWall) {
+          if (otherP.vy > 0 && prevY + otherP.h <= plat.y + 10) {
+            otherP.y = plat.y - otherP.h; otherP.vy = 0; otherP.grounded = true; otherP.landedAt = state.time;
+          }
+        } else if (otherP.vy >= 0 && prevY + otherP.h <= plat.y + 5) {
+          otherP.y = plat.y - otherP.h; otherP.vy = 0; otherP.grounded = true; otherP.landedAt = state.time;
         }
       }
     });
@@ -436,9 +499,23 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
 			  }
 			}
 
-        if (p.vx > 0) p.x = plat.x - p.w; 
-        else if (p.vx < 0) p.x = plat.x + plat.w; 
-        p.vx = 0; 
+        // ✅ DÜZELTİLDİ: Kapı / kol / duvar üstüne basma ve kafayı vurma.
+        // Önceden sadece yatay itme vardı; oyuncu bu nesnelerin içinden düşüyordu.
+        const feetOverlap = p.y + p.h - plat.y;
+        const headOverlap = plat.y + plat.h - p.y;
+        if (p.vy >= 0 && feetOverlap >= 0 && feetOverlap <= 18) {
+          p.y = plat.y - p.h;
+          p.vy = 0;
+          p.grounded = true;
+          p.landedAt = state.time;
+        } else if (p.vy < 0 && headOverlap >= 0 && headOverlap <= 12) {
+          p.y = plat.y + plat.h;
+          p.vy = 0;
+        } else {
+          if (p.vx > 0) p.x = plat.x - p.w;
+          else if (p.vx < 0) p.x = plat.x + plat.w;
+          p.vx = 0;
+        }
         handleColorChange(plat, p, state);
       }
     }
@@ -466,6 +543,7 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
 
     p.vy += GRAVITY * dt;
     const prevY = p.y;
+    const wasGrounded = p.grounded;
     p.y += p.vy * dt;
     p.grounded = false;
 
@@ -520,10 +598,20 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
           const prevBottom = prevY + p.h;
           const bottom = p.y + p.h;
           if (p.vy >= 0 && prevBottom <= ySurfPrev + 8 && bottom >= ySurfNow) {
+            const impactSpeed = p.vy; // ✅ Sert iniş şoku için sıfırlamadan önce sakla
             p.y = ySurfNow - p.h;
             p.vy = 0;
             p.grounded = true;
+            p.landedAt = state.time;
             plat.isTouched = true;
+
+            // ✅ YENİ: Sadece gerçek bir inişte (önceki karede havadaysa) şok ilet.
+            // Tahtada duran oyuncu her karede "iniş" sayılmamalı.
+            if (!wasGrounded && impactSpeed > 0) {
+              const pivotX = plat.x + plat.w / 2;
+              plat.seesawImpact = { offset: cx - pivotX, speed: impactSpeed };
+            }
+
             // Eğimde kayma (platform bazında kapatılabilir: slide: false)
             if (plat.slide !== false) {
               p.vx += Math.sin(plat.angle || 0) * GRAVITY * 0.2 * dt;
@@ -552,7 +640,7 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
                 state.particles.push({ x: p.x+p.w/2+(Math.random()-0.5)*30, y: p.y+p.h, vx: (Math.random()-0.5)*250, vy: -Math.random()*100, life: 0.4+Math.random()*0.2, maxLife: 0.6, size: 2+Math.random()*4, color: 'rgba(255,255,255,0.6)' });
               }
             }
-            p.y = plat.y - p.h; p.vy = 0; p.grounded = true; handleColorChange(plat, p, state);
+            p.y = plat.y - p.h; p.vy = 0; p.grounded = true; p.landedAt = state.time; handleColorChange(plat, p, state);
           } else if (p.vy < 0 && prevY >= plat.y + plat.h - 10) { 
             p.y = plat.y + plat.h; p.vy = 0; handleColorChange(plat, p, state);
           }
@@ -564,7 +652,7 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
                 state.particles.push({ x: p.x+p.w/2+(Math.random()-0.5)*30, y: p.y+p.h, vx: (Math.random()-0.5)*250, vy: -Math.random()*100, life: 0.4+Math.random()*0.2, maxLife: 0.6, size: 2+Math.random()*4, color: 'rgba(255,255,255,0.6)' });
               }
             }
-            p.y = plat.y - p.h; p.vy = 0; p.grounded = true; handleColorChange(plat, p, state);
+            p.y = plat.y - p.h; p.vy = 0; p.grounded = true; p.landedAt = state.time; handleColorChange(plat, p, state);
           }
         }
       }

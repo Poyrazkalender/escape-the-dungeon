@@ -1,5 +1,5 @@
 // Geçici doğrulama betiği: denge platformu motor davranışı (tarayıcısız).
-import { createState, update } from './src/engine.js';
+import { createState, update } from '../src/engine.js';
 
 const SEESAW = { x: 380, y: 300, w: 220, h: 16, color: 'platformNeutral', isSeesaw: true };
 const PIVOT_X = SEESAW.x + SEESAW.w / 2;
@@ -113,6 +113,68 @@ function check(name, ok, extra = '') {
   place(s, 0, PIVOT_X + 100, SURFACE_Y);
   run(s);
   check('maxAngle sınırı aşılmaz', plat.angle <= 0.2001, `angle=${plat.angle.toFixed(3)}`);
+}
+
+// 8) Sert iniş → karşı uçtaki oyuncu havaya fırlar
+{
+  const s = createState(makeLevel());
+  const plat = s.platforms[0];
+  place(s, 0, PIVOT_X - 80, SURFACE_Y); // sol uçta duran oyuncu
+
+  const p2 = s.players[1];
+  p2.x = PIVOT_X + 60;                       // merkezi sağ uçta
+  p2.y = SURFACE_Y - p2.h - 20;              // tahtanın 20px üstünde
+  p2.vx = 0; p2.vy = 900; p2.grounded = false; // sert iniş
+
+  const startY = s.players[0].y;
+  let minVy = 0;
+  for (let i = 0; i < 12; i++) {
+    update(s, {}, 1 / 60, 'BOTH');
+    minVy = Math.min(minVy, s.players[0].vy);
+  }
+
+  check('sert iniş karşı uçtaki oyuncuyu fırlatır', minVy < -300, `minVy=${minVy.toFixed(0)}`);
+  check('fırlayan oyuncu yükselir', s.players[0].y < startY - 10, `y ${startY.toFixed(0)} → ${s.players[0].y.toFixed(0)}`);
+}
+
+// 9) Yumuşak iniş fırlatma yapmaz
+{
+  const s = createState(makeLevel());
+  place(s, 0, PIVOT_X - 80, SURFACE_Y);
+
+  const p2 = s.players[1];
+  p2.x = PIVOT_X + 60;
+  p2.y = SURFACE_Y - p2.h - 20;
+  p2.vx = 0; p2.vy = 150; p2.grounded = false; // yavaş iniş
+
+  let minVy = 0;
+  for (let i = 0; i < 12; i++) {
+    update(s, {}, 1 / 60, 'BOTH');
+    minVy = Math.min(minVy, s.players[0].vy);
+  }
+
+  check('yumuşak iniş fırlatma yapmaz', minVy > -300, `minVy=${minVy.toFixed(0)}`);
+}
+
+// 10) launchEnabled = false fırlatmayı kapatır
+{
+  const s = createState(makeLevel());
+  const plat = s.platforms[0];
+  plat.launchEnabled = false;
+  place(s, 0, PIVOT_X - 80, SURFACE_Y);
+
+  const p2 = s.players[1];
+  p2.x = PIVOT_X + 60;
+  p2.y = SURFACE_Y - p2.h - 20;
+  p2.vx = 0; p2.vy = 900; p2.grounded = false;
+
+  let minVy = 0;
+  for (let i = 0; i < 12; i++) {
+    update(s, {}, 1 / 60, 'BOTH');
+    minVy = Math.min(minVy, s.players[0].vy);
+  }
+
+  check('launchEnabled=false fırlatmayı engeller', minVy > -300, `minVy=${minVy.toFixed(0)}`);
 }
 
 console.log(failures === 0 ? '\nTÜM TESTLER GEÇTİ' : `\n${failures} TEST BAŞARISIZ`);

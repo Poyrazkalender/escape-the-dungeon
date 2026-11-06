@@ -19,8 +19,9 @@ export function validateLevel(level) {
   const errors = [];
   if (!level) return ['Level verisi yok'];
   if (!Array.isArray(level.platforms)) errors.push('platforms bir dizi olmalı');
-  if (!level.blueSpawn?.x) errors.push('blueSpawn.x eksik');
-  if (!level.pinkSpawn?.x) errors.push('pinkSpawn.x eksik');
+  // ✅ DÜZELTİLDİ: x=0 geçerli bir koordinattır; falsy kontrolü yerine tip kontrolü.
+  if (typeof level.blueSpawn?.x !== 'number') errors.push('blueSpawn.x eksik veya sayı değil');
+  if (typeof level.pinkSpawn?.x !== 'number') errors.push('pinkSpawn.x eksik veya sayı değil');
   const goals = level.platforms?.filter(p => p.isGoal) || [];
   if (goals.length === 0) errors.push('En az 1 goal olmalı');
   if (goals.length > 1) errors.push('Sadece 1 goal olabilir');
