@@ -15,7 +15,7 @@ export const DEFAULT_SEESAW = {  angle: 0,
 
   // ✅ YENİ: Sert iniş fırlatması
   launchEnabled: true,
-  impactThreshold: 700, // Bu hızın (px/s) üzerindeki inişler şok üretir
+  impactThreshold: 600, // Bu hızın (px/s) üzerindeki inişler şok üretir
   launchStrength: 1,    // Fırlatma gücü çarpanı
   impactMinArm: 15,     // İnişin pivot merkezine minimum uzaklığı (px)
   launchMinArm: 25,     // Fırlatılacak oyuncunun pivot merkezine minimum uzaklığı (px)
@@ -53,7 +53,7 @@ export function isOverSeesaw(plat, worldX) {
 
 /**
  * Tek serbestlik dereceli denge platformu.
- * riders: [{ x, weight }]  (x = oyuncunun dünya merkez X'i)
+ * riders: [{ body, x, weight, isBox }]  (x = cismin dünya merkez X'i)
  * Dönen değer: yeni açı.
  */
 export function stepSeesaw(plat, riders, dt, gravity) {
@@ -89,9 +89,10 @@ export function stepSeesaw(plat, riders, dt, gravity) {
 /**
  * Sert iniş şoku ile karşı uçtaki biniciyi fırlatır.
  *
- * impact: { offset, speed } — offset = iniş yapan oyuncunun pivot merkezine
+ * impact: { offset, speed } — offset = iniş yapan cismin pivot merkezine
  * göre işaretli uzaklığı (px), speed = iniş anındaki dikey hız (px/s).
  *
+ * Fırlatma sadece oyunculara uygulanır; kutular tahtaya ağırlık verir ama uçmaz.
  * Dönen değer: { rider, vy, vx } veya null (fırlatma yok).
  */
 export function computeSeesawLaunch(plat, riders, impact) {
@@ -112,6 +113,8 @@ export function computeSeesawLaunch(plat, riders, impact) {
   let best = null;
 
   for (const rider of riders) {
+    // Sadece oyuncular fırlatılır; kutular tahtaya ağırlık verir ama uçmaz.
+    if (rider.isBox) continue;
     const offset = rider.x - pivotX;
     // Karşı uçta ve pivot merkezinden yeterince uzakta olmalı.
     if (Math.sign(offset) === impactSide) continue;
@@ -124,7 +127,9 @@ export function computeSeesawLaunch(plat, riders, impact) {
   if (!best) return null;
 
   // İniş hızı arttıkça fırlatma da güçlenir; alt/üst sınırlarla kontrol edilir.
-  const power = Math.min(1200, Math.max(420, impact.speed * 0.85)) * strength;
+  // Ağır cisimler (örn. ağır kutu) daha güçlü fırlatır.
+  const massFactor = Math.min(1.7, 0.75 + 0.25 * (impact.weight ?? 1));
+  const power = Math.min(1500, Math.max(420, impact.speed * 0.85) * strength * massFactor);
 
   return {
     rider: best.rider,

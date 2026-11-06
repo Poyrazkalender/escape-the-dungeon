@@ -3,58 +3,81 @@ import { useRef, useState, useEffect } from 'react';
 export default function MobileTestControls({ player, setPlayer, playerRef, testKeysRef }) {
   const joystickRef = useRef(null);
   const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
+  const activePointerRef = useRef(null);
 
-  const controls = player === 'P2'
+  const isP2 = player === 'P2';
+  const controls = isP2
     ? { left: 'ArrowLeft', right: 'ArrowRight', jump: 'ArrowUp', down: 'ArrowDown' }
     : { left: 'KeyA', right: 'KeyD', jump: 'KeyW', down: 'KeyS' };
+  const controlsRef = useRef(controls);
+  useEffect(() => { controlsRef.current = controls; });
 
   // Oyuncu değişince tuşları serbest bırak
   useEffect(() => {
+    const keyRef = testKeysRef;
     return () => {
-      if (testKeysRef.current) {
-        testKeysRef.current[controls.left] = false;
-        testKeysRef.current[controls.right] = false;
-        testKeysRef.current[controls.jump] = false;
-        testKeysRef.current[controls.down] = false;
+      if (keyRef.current) {
+        const c = controlsRef.current;
+        keyRef.current[c.left] = false;
+        keyRef.current[c.right] = false;
+        keyRef.current[c.jump] = false;
+        keyRef.current[c.down] = false;
       }
     };
-  }, [player]);
+  }, [isP2, testKeysRef]);
 
-  const handleJoystick = (e) => {
-    e.preventDefault();
-    const touch = e.touches[0];
-    if (!touch || !joystickRef.current) return;
-    const rect = joystickRef.current.getBoundingClientRect();
+  // ✅ DÜZELTİLDİ: React'in touch/wheel dinleyicileri "passive" olduğu için
+  // içlerinde preventDefault() çağırmak konsola
+  // "Unable to preventDefault inside passive event listener invocation"
+  // hatası basıyordu. Pointer Events kullanıyoruz: passive değiller ve
+  // touchAction:'none' ile kaydırma zaten engelleniyor.
+  const updateFromPointer = (e) => {
+    const el = joystickRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
-    let dx = touch.clientX - cx;
-    let dy = touch.clientY - cy;
+    let dx = e.clientX - cx;
+    let dy = e.clientY - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const maxDist = rect.width / 2 - 20;
     if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
     setKnobPos({ x: dx, y: dy });
 
+    const c = controlsRef.current;
     if (dx > 10) {
-      testKeysRef.current[controls.left] = false;
-      testKeysRef.current[controls.right] = true;
+      testKeysRef.current[c.left] = false;
+      testKeysRef.current[c.right] = true;
     } else if (dx < -10) {
-      testKeysRef.current[controls.right] = false;
-      testKeysRef.current[controls.left] = true;
+      testKeysRef.current[c.right] = false;
+      testKeysRef.current[c.left] = true;
     } else {
-      testKeysRef.current[controls.left] = false;
-      testKeysRef.current[controls.right] = false;
+      testKeysRef.current[c.left] = false;
+      testKeysRef.current[c.right] = false;
     }
   };
 
-  const handleJoystickEnd = (e) => {
-    e.preventDefault();
-    setKnobPos({ x: 0, y: 0 });
-    testKeysRef.current[controls.left] = false;
-    testKeysRef.current[controls.right] = false;
+  const handleJoystickDown = (e) => {
+    activePointerRef.current = e.pointerId;
+    joystickRef.current?.setPointerCapture?.(e.pointerId);
+    updateFromPointer(e);
   };
 
-  const handleJump = (pressed) => (e) => { e.preventDefault(); testKeysRef.current[controls.jump] = pressed; };
-  const handleDown = (pressed) => (e) => { e.preventDefault(); testKeysRef.current[controls.down] = pressed; };
+  const handleJoystickMove = (e) => {
+    if (activePointerRef.current !== e.pointerId) return;
+    updateFromPointer(e);
+  };
+
+  const handleJoystickUp = (e) => {
+    if (activePointerRef.current !== e.pointerId) return;
+    activePointerRef.current = null;
+    setKnobPos({ x: 0, y: 0 });
+    const c = controlsRef.current;
+    testKeysRef.current[c.left] = false;
+    testKeysRef.current[c.right] = false;
+  };
+
+  const setKey = (key, pressed) => () => { testKeysRef.current[key] = pressed; };
 
   const btnStyle = (color, size = 70) => ({
     width: size, height: size, borderRadius: '50%',
@@ -63,6 +86,14 @@ export default function MobileTestControls({ player, setPlayer, playerRef, testK
     display: 'flex', justifyContent: 'center', alignItems: 'center',
     userSelect: 'none', touchAction: 'none',
     boxShadow: '0 0 15px rgba(0,0,0,0.4)',
+  });
+
+  const actionBtnProps = (key) => ({
+    onPointerDown: setKey(key, true),
+    onPointerUp: setKey(key, false),
+    onPointerCancel: setKey(key, false),
+    onPointerLeave: setKey(key, false),
+    onContextMenu: (e) => e.preventDefault(),
   });
 
   return (
@@ -95,10 +126,11 @@ export default function MobileTestControls({ player, setPlayer, playerRef, testK
       {/* Joystick (Sol Alt) */}
       <div style={{ position: 'absolute', bottom: 30, left: 30, zIndex: 30, pointerEvents: 'auto' }}>
         <div ref={joystickRef}
-          onTouchStart={handleJoystick}
-          onTouchMove={handleJoystick}
-          onTouchEnd={handleJoystickEnd}
-          onTouchCancel={handleJoystickEnd}
+          onPointerDown={handleJoystickDown}
+          onPointerMove={handleJoystickMove}
+          onPointerUp={handleJoystickUp}
+          onPointerCancel={handleJoystickUp}
+          onContextMenu={(e) => e.preventDefault()}
           style={{
             width: 130, height: 130, borderRadius: '50%',
             background: 'rgba(255,255,255,0.1)',
@@ -123,10 +155,8 @@ export default function MobileTestControls({ player, setPlayer, playerRef, testK
         position: 'absolute', bottom: 30, right: 30, zIndex: 30, pointerEvents: 'auto',
         display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-end'
       }}>
-        <div onTouchStart={handleJump(true)} onTouchEnd={handleJump(false)} onTouchCancel={handleJump(false)}
-          style={btnStyle('rgba(34, 197, 94, 0.75)')}>↑</div>
-        <div onTouchStart={handleDown(true)} onTouchEnd={handleDown(false)} onTouchCancel={handleDown(false)}
-          style={btnStyle('rgba(239, 68, 68, 0.75)', 60)}>↓</div>
+        <div {...actionBtnProps(controls.jump)} style={btnStyle('rgba(34, 197, 94, 0.75)')}>↑</div>
+        <div {...actionBtnProps(controls.down)} style={btnStyle('rgba(239, 68, 68, 0.75)', 60)}>↓</div>
       </div>
     </>
   );

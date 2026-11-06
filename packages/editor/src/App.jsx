@@ -366,11 +366,27 @@ export default function App() {
     };
   }, [isTesting]);
 
-  const handleWheel = (e) => {
-    if (isTesting) return;
-    e.preventDefault();
-    setZoom(z => Math.min(Math.max(0.2, z + -e.deltaY * 0.001), 3));
-  };
+  // ✅ DÜZELTİLDİ: React, wheel/touch dinleyicilerini "passive" olarak eklediği
+  // için onWheel içinde preventDefault() çağırmak tarayıcıda
+  // "Unable to preventDefault inside passive event listener invocation" hatası
+  // üretiyordu. Dinleyiciyi native ve passive:false olarak bağlıyoruz.
+  const stageRef = useRef(null);
+  const isTestingRef2 = useRef(isTesting);
+  useEffect(() => { isTestingRef2.current = isTesting; }, [isTesting]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    const onWheelNative = (e) => {
+      if (isTestingRef2.current) return;
+      e.preventDefault();
+      setZoom(z => Math.min(Math.max(0.2, z + -e.deltaY * 0.001), 3));
+    };
+
+    stage.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => stage.removeEventListener('wheel', onWheelNative);
+  }, []);
 
   const getGridCoords = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
@@ -477,7 +493,7 @@ export default function App() {
         damping: 3,
         launchEnabled: true,
         launchStrength: 1,
-        impactThreshold: 700,
+        impactThreshold: 600,
       };
       const newPlatforms = [...levelData.platforms, newPlatform];
       setLevelData({ ...levelData, platforms: newPlatforms });
@@ -964,8 +980,8 @@ export default function App() {
           <div className="ruler ruler-left"><div /></div>
           
           <div 
+            ref={stageRef}
             className={`stage-grid ${gridSnap ? '' : 'no-snap'} ${isPanning ? 'panning' : ''}`}
-            onWheel={handleWheel}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
           >
             <div style={{ 
@@ -1106,11 +1122,11 @@ export default function App() {
                       />
 
                       <label style={{ fontSize: 11, color: '#ccc', display: 'block', marginTop: 8 }}>
-                        İniş Eşiği: {selectedPlatform.impactThreshold ?? 700} px/s
+                        İniş Eşiği: {selectedPlatform.impactThreshold ?? 600} px/s
                       </label>
                       <input
                         type="range" min="400" max="1200" step="50"
-                        value={selectedPlatform.impactThreshold ?? 700}
+                        value={selectedPlatform.impactThreshold ?? 600}
                         onChange={e => updateSelectedPlatform('impactThreshold', Number(e.target.value))}
                         style={{ width: '100%' }}
                       />
@@ -1233,6 +1249,24 @@ export default function App() {
                   <p style={{ fontSize: 11, color: '#888', marginTop: 8, marginBottom: 0 }}>
                     Düşman başlangıç noktasından itibaren belirtilen mesafe kadar gidip döner.
                     Dokunursanız seviye yeniden başlar.
+                  </p>
+                </div>
+              )}
+
+              {selectedPlatform?.isBox && (
+                <div style={{ marginTop: 15, padding: 10, background: '#241a13', borderRadius: 6, border: '1px solid #d97706' }}>
+                  <h4 style={{ margin: '0 0 10px', color: '#fbbf24', fontSize: 13 }}>📦 İtilir Kutu</h4>
+                  <label style={{ fontSize: 11, color: '#ccc', display: 'block' }}>
+                    Denge Ağırlığı: {(selectedPlatform.boxMass ?? 1.5).toFixed(1)} (oyuncu = 1)
+                  </label>
+                  <input type="range" min="0.5" max="4" step="0.1"
+                    value={selectedPlatform.boxMass ?? 1.5}
+                    onChange={e => updateSelectedPlatform('boxMass', Number(e.target.value))}
+                    style={{ width: '100%' }} />
+                  <p style={{ fontSize: 11, color: '#888', marginTop: 8, marginBottom: 0 }}>
+                    Kutu denge platformuna bindiğinde bu ağırlıkla tork uygular.
+                    Yüksekten düşen kutu, karşı uçtaki oyuncuyu fırlatır; ağırlık arttıkça
+                    fırlatma gücü de artar.
                   </p>
                 </div>
               )}

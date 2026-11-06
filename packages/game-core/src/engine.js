@@ -43,6 +43,8 @@ export function createState(levelData, characters = { p1: 'platformBlue', p2: 'p
       patrolDir: p.patrolDir === -1 ? -1 : 1,
       // ✅ YENİ: Kutu için fizik değişkenleri
       vx: 0, vy: 0, grounded: false, boxGrounded: false ,
+      // ✅ YENİ: Kutunun denge platformundaki ağırlığı (oyuncu = 1)
+      boxMass: p.boxMass !== undefined ? p.boxMass : 1.5,
 	  leverTilt: 0, // ✅ YENİ: Kol eğim açısı (-1 ile +1 arası)
 	  leverState: p.leverState !== undefined ? p.leverState : 0, // ✅ YENİ
     })),
@@ -215,6 +217,9 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
   for (const plat of state.platforms) {
     if (!plat.isBox || plat.isBroken) continue;
 
+    const prevBoxY = plat.y;
+    const wasBoxGrounded = plat.boxGrounded;
+
     // Kutuya yerçekimi uygula
     plat.vy += GRAVITY * dt;
     plat.y += plat.vy * dt;
@@ -223,6 +228,41 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
     // Kutu ile zemin çarpışması
     for (const ground of state.platforms) {
       if (ground === plat || ground.isBox || ground.isKey || ground.isGoal || ground.isHazard || ground.isWheel || ground.isEnemy) continue;
+
+      // ✅ YENİ: Kutu da denge platformuna biner ve sert inişte şok üretir.
+      if (ground.isSeesaw) {
+        if (ground.isBroken) continue;
+        const boxCx = plat.x + plat.w / 2;
+        if (!isOverSeesaw(ground, boxCx)) continue;
+
+        const ySurf = seesawSurfaceY(ground, boxCx);
+        const prevBottom = prevBoxY + plat.h;
+        const bottom = plat.y + plat.h;
+
+        // ✅ DÜZELTİLDİ: Süpürme (swept) testi — hızlı düşen kutu ince tahtayı
+        // tek karede geçip "tünellemesin". Tolerans, karenin düşüş mesafesiyle büyür.
+        const sweep = Math.max(10, Math.abs(plat.vy) * dt + 2);
+        if (plat.vy >= 0 && prevBottom <= ySurf + sweep && bottom >= ySurf - 2) {
+          const impactSpeed = plat.vy;
+          plat.y = ySurf - plat.h;
+          plat.vy = 0;
+          plat.boxGrounded = true;
+
+          const threshold = ground.impactThreshold ?? DEFAULT_SEESAW.impactThreshold;
+          if (!wasBoxGrounded && impactSpeed >= threshold) {
+            ground.seesawImpact = {
+              offset: boxCx - (ground.x + ground.w / 2),
+              speed: impactSpeed,
+              weight: plat.boxMass ?? 1.5,
+            };
+          }
+
+          // ✅ Kutu tahtada kaymaz (oyuncu gibi sürtünmeli durur), aksi halde
+          // eğimde kendi kendine kayıp mekaniği güvenilmez hale getiriyordu.
+        }
+        continue;
+      }
+
       if (isSolid('platformNeutral', ground) && checkCollision(plat, ground)) {
         if (plat.vy > 0) {
           plat.y = ground.y - plat.h;
@@ -403,7 +443,29 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
           const pivotX = plat.x + plat.w / 2;
           plat.seesawImpact = { offset: cx - pivotX, speed: p.vy };
         }
-        riders.push({ player: p, x: cx, weight: 1 });
+        riders.push({ body: p, x: cx, weight: 1, isBox: false });
+      }
+    }
+
+    // ✅ YENİ: Kutular da tahtaya ağırlık uygular (oyuncular gibi).
+    for (const box of state.platforms) {
+      if (!box.isBox || box.isBroken) continue;
+      const cx = box.x + box.w / 2;
+      if (!isOverSeesaw(plat, cx)) continue;
+      const ySurf = seesawSurfaceY(plat, cx);
+      if (box.vy >= 0 && Math.abs((box.y + box.h) - ySurf) < 18) {
+        // ✅ DÜZELTİLDİ: Kutu, çarpışma testinden önce burada yakalanabilir;
+        // sert iniş şoku burada da kaydedilir. Aksi halde kutu "yumuşak" sayılıp
+        // hızı sıfırlanıyor ve fırlatma hiç tetiklenmiyordu.
+        const threshold = plat.impactThreshold ?? DEFAULT_SEESAW.impactThreshold;
+        if (!box.boxGrounded && box.vy >= threshold) {
+          plat.seesawImpact = {
+            offset: cx - (plat.x + plat.w / 2),
+            speed: box.vy,
+            weight: box.boxMass ?? 1.5,
+          };
+        }
+        riders.push({ body: box, x: cx, weight: box.boxMass ?? 1.5, isBox: true });
       }
     }
 
@@ -414,7 +476,7 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
     plat.seesawImpact = null;
     const launch = computeSeesawLaunch(plat, riders, impact);
     if (launch) {
-      const p = launch.rider.player;
+      const p = launch.rider.body;
       p.vy = launch.vy;
       p.vx += launch.vx;
       p.grounded = false;
@@ -444,12 +506,16 @@ export function update(state, keys = {}, dt, controlledPlayer = 'P1', isTesting 
 
     // Dönen yüzeyle birlikte binicileri taşı (mutlak konumlandırma).
     for (const r of riders) {
-      const p = r.player;
-      const ySurf = seesawSurfaceY(plat, p.x + p.w / 2);
-      p.y = ySurf - p.h;
-      p.vy = 0;
-      p.grounded = true;
-      p.landedAt = state.time;
+      const body = r.body;
+      const ySurf = seesawSurfaceY(plat, body.x + body.w / 2);
+      body.y = ySurf - body.h;
+      body.vy = 0;
+      if (r.isBox) {
+        body.boxGrounded = true;
+      } else {
+        body.grounded = true;
+        body.landedAt = state.time;
+      }
       plat.isTouched = true;
     }
   }
